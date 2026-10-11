@@ -167,3 +167,20 @@ def test_campaign_api_endpoints():
     sarif = client.get(f"/api/campaigns/{cid}/export?format=sarif")
     assert sarif.status_code == 200
     assert sarif.json()["version"] == "2.1.0"
+
+
+def test_deleting_a_scan_removes_linked_campaigns_and_runs():
+    s = store()
+    sid_a, sid_b = new_scan_id(), new_scan_id()
+    for sid in (sid_a, sid_b):
+        s.save(ScanReport(scan_id=sid, created_at=utcnow(), input_kind="text", status=ScanState.completed))
+        s.save_files(sid, {"SKILL.md": "text"})
+    cid = client.post("/api/campaigns", json={"scan_ids": [sid_a, sid_b]}).json()["campaign_id"]
+    run_id = client.post(f"/api/scans/{sid_a}/red-team-runs", json={"advance_first_round": False}).json()["run_id"]
+
+    res = client.delete(f"/api/scans/{sid_a}").json()
+    assert res["deleted_campaigns"] == [cid]
+    assert res["deleted_adaptive_runs"] == [run_id]
+    assert client.get(f"/api/campaigns/{cid}").status_code == 404
+    assert client.get(f"/api/red-team-runs/{run_id}").status_code == 404
+    assert cid not in s.get(sid_b).extensions.get("multi_skill_campaign_ids", [])

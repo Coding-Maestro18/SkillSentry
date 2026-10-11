@@ -129,6 +129,14 @@ class ScanStore:
                 return None
             return p.read_text(encoding="utf-8") if p.exists() else None
 
+    def delete_artifact(self, kind: str, artifact_id: str) -> None:
+        with self._lock:
+            try:
+                p = self._artifact_path(kind, artifact_id)
+            except KeyError:
+                return
+            p.unlink(missing_ok=True)
+
     def list_artifacts(self, kind: str) -> list[str]:
         d = self.root / "_" / kind
         if kind not in _ARTIFACT_KINDS or not d.exists():
@@ -146,6 +154,13 @@ class ScanStore:
                 ids.append(value)
                 self.save(rep)
 
+
+    def unlink_extension(self, scan_id: str, key: str, value: str) -> None:
+        with self._lock:
+            rep = self.get(scan_id)
+            if rep is not None and value in rep.extensions.get(key, []):
+                rep.extensions[key].remove(value)
+                self.save(rep)
 
     def delete(self, scan_id: str) -> bool:
         with self._lock:

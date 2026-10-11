@@ -5,10 +5,12 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, File, Form, UploadFile
 
 from ..analyzers.forensic_view import PREVIEW_NOTE, build_preview, build_reveal
+from ..campaigns.coordinator import delete_campaigns_for_scan
 from ..harness.runner import run_test
 from ..ingest.archive_validator import IngestError, RawFile, read_zip
 from ..pipeline import create_report, new_scan_id, run_pipeline
 from ..schemas import FileView, RerunRequest, ScanState, ScanStatus, TestResult
+from ..test_generation.adaptive import delete_runs_for_scan
 from .deps import ApiError, get_report_or_404, settings, store
 
 router = APIRouter()
@@ -76,8 +78,11 @@ def scan_status(scan_id: str) -> ScanStatus:
 @router.delete("/api/scans/{scan_id}")
 def delete_scan(scan_id: str) -> dict:
     get_report_or_404(scan_id)
+    # Linked extension artifacts would otherwise outlive the scan they point at.
+    runs = delete_runs_for_scan(store(), scan_id)
+    campaigns = delete_campaigns_for_scan(store(), scan_id)
     store().delete(scan_id)
-    return {"deleted": scan_id}
+    return {"deleted": scan_id, "deleted_campaigns": campaigns, "deleted_adaptive_runs": runs}
 
 
 @router.get("/api/scans/{scan_id}/files")

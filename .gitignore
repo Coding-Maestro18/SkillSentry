@@ -28,3 +28,5 @@ node_modules/
 Thumbs.db
 
 docs/
+# Runtime scan storage (SKILLSENTRY_DATA_DIR default)
+data/

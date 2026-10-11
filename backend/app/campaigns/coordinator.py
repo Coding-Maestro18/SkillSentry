@@ -48,6 +48,21 @@ def list_campaigns(store: Optional[ScanStore] = None) -> list[Campaign]:
     return sorted(_CAMPAIGNS.values(), key=lambda c: c.created_at, reverse=True)
 
 
+def delete_campaigns_for_scan(store: ScanStore, scan_id: str) -> list[str]:
+    """Remove every campaign that includes ``scan_id``; it cannot be simulated without both scans."""
+    removed = []
+    for camp in list_campaigns(store):
+        if scan_id not in camp.scan_ids:
+            continue
+        _CAMPAIGNS.pop(camp.campaign_id, None)
+        store.delete_artifact("campaigns", camp.campaign_id)
+        for other in camp.scan_ids:
+            if other != scan_id:
+                store.unlink_extension(other, "multi_skill_campaign_ids", camp.campaign_id)
+        removed.append(camp.campaign_id)
+    return removed
+
+
 def motivating_findings(report: ScanReport) -> list[Finding]:
     """Findings that justify simulating this skill's half of the chain (medium or higher)."""
     floor = SEVERITY_ORDER[Severity.medium]

@@ -93,6 +93,16 @@ def list_runs_for_scan(scan_id: str, store: ScanStore) -> list[AdaptiveRedTeamRu
     return [r for r in (get_run(i, store) for i in ids) if r]
 
 
+def delete_runs_for_scan(store: ScanStore, scan_id: str) -> list[str]:
+    """Remove the adaptive runs recorded on a scan's report."""
+    rep = store.get(scan_id)
+    ids = list(rep.extensions.get("adaptive_run_ids", [])) if rep else []
+    for run_id in ids:
+        _RUNS.pop(run_id, None)
+        store.delete_artifact("red_team", run_id)
+    return ids
+
+
 def save_run(run: AdaptiveRedTeamRun, store: Optional[ScanStore] = None) -> None:
     run.updated_at = utcnow()
     _RUNS[run.run_id] = run
