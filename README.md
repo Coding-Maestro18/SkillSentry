@@ -1,8 +1,8 @@
 # SkillSentry
 
-**SkillSentry** is an open-source security analysis and testing workbench for **AI Agent Skills**. It inspects agent skill packages (`SKILL.md` and supporting references), detects hidden instructions and deceptive formatting (including invisible Unicode, confusable homoglyphs, HTML comments, hidden CSS styles, and whitespace-encoded payloads), simulates adversarial test scenarios against **deterministic mock tools**, reviews granular line/column evidence, generates schema-validated least-privilege policies, runs bounded adaptive red-team campaigns, and analyzes cross-skill attack chains.
+**SkillSentry** is an open-source security analysis and testing workbench for **AI Agent Skills**. It inspects skill packages (`SKILL.md` and supporting reference files), detects hidden instructions and deceptive formatting (invisible Unicode, confusable homoglyphs, HTML comments, hidden CSS styles, whitespace-encoded payloads), simulates adversarial scenarios against **deterministic mock tools**, and links every finding to exact line/column evidence. Extensions add least-privilege policy proposals, bounded adaptive red-team testing, cross-skill attack chains, and SARIF 2.1.0 export.
 
-> **Core Security Principle:** SkillSentry analyzes untrusted content and simulates behavior. It **never executes uploaded code or scripts on the host**, makes **no real network requests** from the harness, uses **no real credentials**, and does not claim to certify an arbitrary skill as universally safe.
+> **Core security principle:** SkillSentry analyzes untrusted content and simulates behavior. It **never executes uploaded code**, makes **no real network requests** from the harness, uses **no real credentials**, and never certifies a skill as safe. A clean report means "nothing found in what was inspected", not "safe".
 
 ---
 
@@ -11,21 +11,22 @@
 - [System Architecture](#system-architecture)
 - [Key Capabilities](#key-capabilities)
 - [Feature Deep Dives](#feature-deep-dives)
-  - [1. Multi-Skill Attack Chains (Feature A)](#1-multi-skill-attack-chains-feature-a)
-  - [2. Unique Canary-Token Detection (Feature B)](#2-unique-canary-token-detection-feature-b)
-  - [3. Reviewable Least-Privilege Policy Generator (Feature C)](#3-reviewable-least-privilege-policy-generator-feature-c)
-  - [4. OASIS SARIF 2.1.0 Export (Feature D)](#4-oasis-sarif-210-export-feature-d)
-  - [5. Bounded Adaptive Red-Team Testing (Feature E)](#5-bounded-adaptive-red-team-testing-feature-e)
-  - [6. Fix & Verify Remediation Workflow](#6-fix--verify-remediation-workflow)
-- [Mock Tool Sandbox & Policy Gate](#mock-tool-sandbox--policy-gate)
-- [Forensic UI & Workbench](#forensic-ui--workbench)
-- [Detection Taxonomy (17+ Rules)](#detection-taxonomy-17-rules)
-- [Benchmark Results & Test Suite](#benchmark-results--test-suite)
-- [Complete API Reference (22 Endpoints)](#complete-api-reference-22-endpoints)
-- [Quick Start & Installation](#quick-start--installation)
+  - [1. Multi-Skill Attack Chains](#1-multi-skill-attack-chains)
+  - [2. Synthetic Canary-Token Detection](#2-synthetic-canary-token-detection)
+  - [3. Least-Privilege Policy Proposals](#3-least-privilege-policy-proposals)
+  - [4. SARIF 2.1.0 Export](#4-sarif-210-export)
+  - [5. Bounded Adaptive Red-Team Testing](#5-bounded-adaptive-red-team-testing)
+  - [6. Fix & Retest](#6-fix--retest)
+- [Mock Tool Harness & Policy Gate](#mock-tool-harness--policy-gate)
+- [Workbench UI](#workbench-ui)
+- [Detection Rules](#detection-rules)
+- [Evaluation & Tests](#evaluation--tests)
+- [API Reference](#api-reference)
+- [Quick Start](#quick-start)
 - [Local Open-Weight Model Setup](#local-open-weight-model-setup)
-- [CI/CD Integration (GitHub Actions)](#cicd-integration-github-actions)
+- [Example: CI Usage](#example-ci-usage)
 - [Security Model & Trust Boundaries](#security-model--trust-boundaries)
+- [Known Limitations](#known-limitations)
 - [Project Layout](#project-layout)
 - [License](#license)
 
@@ -33,451 +34,448 @@
 
 ## System Architecture
 
-SkillSentry implements a multi-stage, defense-in-depth pipeline that combines deterministic analyzers, an optional open-weight language model adapter, an isolated mock execution harness, and evidence-first reporting.
+SkillSentry combines deterministic analyzers, an optional open-weight model adapter, an in-memory mock harness, and evidence-first reporting.
 
 ```mermaid
 flowchart TD
-    subgraph INGESTION["1. Ingestion & Coordinate Mapping"]
-        ZIP["Skill Package (.zip / text)"] --> SEC["Zip Security Guard<br/>(Traversal, Zip Bomb, Symlink Check)"]
-        SEC --> PARSER["SKILL.md & Ref Parser<br/>(YAML Frontmatter + AST)"]
-        PARSER --> SMAP["Immutable Coordinate Source Map<br/>(1-indexed Line & Column Offsets)"]
+    subgraph INGESTION["1. Ingestion & Source Mapping"]
+        ZIP["Skill Package (.zip / pasted text)"] --> SEC["Archive Guard<br/>(traversal, symlinks, size limits, collisions)"]
+        SEC --> PARSER["SKILL.md & Reference Parser<br/>(frontmatter as data)"]
+        PARSER --> SMAP["Immutable Source Map<br/>(1-indexed line & column)"]
     end
 
-    subgraph DUAL_ANALYSIS["2. Dual-Engine Forensic Analysis"]
-        SMAP --> RULES["Deterministic Static Rules<br/>(Overrides, Secrets, Exfiltration, Shell)"]
-        SMAP --> UNICODE["Invisible & Unicode Deception Scanner<br/>(ZWSP, Tags, Bidi, Confusables, Styles, Spaces)"]
-        SMAP -.-> MODEL["Open-Weight LLM Adapter<br/>(Ollama / Qwen2.5-7B-Instruct)<br/>[Degrades to Static Mode if Offline]"]
-        RULES --> NORM["Evidence Normalizer & Deduplicator"]
+    subgraph ANALYSIS["2. Analysis"]
+        SMAP --> RULES["Deterministic Static Rules"]
+        SMAP --> UNICODE["Invisible Content & Unicode Scanner"]
+        SMAP -.-> MODEL["Open-Weight Model Adapter<br/>(Ollama / OpenAI-compatible)<br/>optional; schema-validated"]
+        RULES --> NORM["Finding Normalizer"]
         UNICODE --> NORM
         MODEL -.-> NORM
     end
 
-    subgraph HARNESS["3. Deterministic Mock Harness & Policy Gate"]
-        NORM --> PASSPORT["Capability Passport<br/>(Declared vs Inferred Permissions)"]
-        PASSPORT --> FIXTURES["Adversarial & Benign Test Scenarios<br/>(Allowlisted Tool Actions)"]
-        CANARY["Cryptographic Synthetic Canary<br/>(CANARY_SKILL_<hex> in MockWorld)"] --> MOCK_GATE
-        FIXTURES --> MOCK_GATE["Mock Policy Gate<br/>(ALLOW / BLOCK / FLAG Decisions)"]
-        MOCK_GATE --> TRACE["Auditable Event Trace Buffer<br/>(Pre-Redaction Canary Observer)"]
+    subgraph HARNESS["3. Mock Harness"]
+        NORM --> SUITE["Fixed Test Suite (TC-001…TC-008)<br/>+ validated model-proposed tests"]
+        SUITE --> GATE["Policy Gate<br/>(ALLOW / BLOCK / FLAG)"]
+        CANARY["Per-run Synthetic Canary"] --> GATE
+        GATE --> TRACE["Trace Collector<br/>(canary checked before redaction)"]
     end
 
-    subgraph WORKBENCH["4. Interactive Security Workbench"]
-        NORM --> REPORT["Comprehensive Scan Report<br/>(JSON, Markdown, SARIF 2.1.0)"]
+    subgraph WORKBENCH["4. Workbench"]
+        NORM --> REPORT["Report + Capability Passport<br/>(JSON, Markdown, SARIF 2.1.0)"]
         TRACE --> REPORT
-        REPORT --> LAB["Attack Lab<br/>(Simulated Traces)"]
-        REPORT --> POLICY["Least-Privilege Policy<br/>(SKILL_POLICY.yaml)"]
-        REPORT --> ADAPTIVE["Adaptive Red-Team Loop<br/>(Max 3 Rounds / 9 Tests)"]
-        REPORT --> CAMPAIGN["Multi-Skill Attack Chains<br/>(Cross-Skill Exfiltration Graph)"]
-        REPORT --> REMEDIATE["Fix & Retest Loop<br/>(Same-Suite Verification)"]
+        REPORT --> POLICY["SKILL_POLICY.yaml revisions"]
+        REPORT --> ADAPTIVE["Adaptive Red Team<br/>(≤3 rounds, ≤9 tests)"]
+        REPORT --> CAMPAIGN["Multi-Skill Campaigns"]
+        REPORT --> FIX["Fix & Retest<br/>(same test IDs)"]
     end
 ```
+
+Every result carries its provenance: **observed** (a fact from the source or a recorded trace), **rule-based**, **model interpretation**, or **simulated**.
 
 ---
 
 ## Key Capabilities
 
-1. **Deterministic Static & Deception Detection:** Detects prompt overrides, credential harvest directives, unauthorized network egress, shell/execution requests, and concealment instructions across both `SKILL.md` and reference documents.
-2. **Invisible Content & Unicode Steganography Forensics:** Identifies zero-width characters, bidirectional override controls (Trojan Source), Unicode tag characters (ASCII smuggling), visual confusables/homoglyphs, HTML comments, hidden CSS presentation patterns, and whitespace-encoded payloads.
-3. **Deterministic Mock Tool Execution:** Evaluates how instructions manifest against an allowlisted set of mock tools (`read_public_file`, `read_canary_file`, `write_mock_file`, `send_mock_request`, `list_mock_resources`, `request_capability`) without touching the real operating system or network.
-4. **Synthetic Canary-Token Tracking:** Generates ephemeral per-run synthetic tokens to prove whether simulated exfiltration occurs, while keeping raw values strictly redacted in logs and exports.
-5. **Least-Privilege Policy Generation:** Automatically proposes schema-validated `SKILL_POLICY.yaml` files adhering to default-deny (`BLOCK`) boundaries with explicit domain and file glob allowlists.
-6. **OASIS SARIF 2.1.0 Export:** Produces standards-compliant SARIF output compatible with GitHub Code Scanning, GitLab SAST, and IDE security extensions.
-7. **Bounded Adaptive Red-Team Testing:** Explores follow-up attack hypotheses within strict, server-enforced bounds (max 3 rounds, max 3 candidates/round, max 9 tests total) while preserving benign controls.
-8. **Multi-Skill Attack Chains:** Maps cross-skill handoff fixtures into an interactive relationship graph to model chained privilege escalation and exfiltration.
-9. **Fix & Retest Workflow:** Proposes surgical fixes, renders unified diffs, and reruns the identical test suite against the revised copy to verify resolution and prevent regressions.
+1. **Static instruction analysis:** instruction overrides, secret disclosure, data exfiltration, capability expansion, concealment, role hijacking, encoded payloads, and declared-purpose mismatches, across `SKILL.md` and supported files in `references/`.
+2. **Invisible content & Unicode forensics:** zero-width and default-ignorable characters, bidi controls (Trojan Source), Unicode tag characters (ASCII smuggling), mixed-script confusables, HTML comments, hidden CSS styling, unusual Unicode spaces, and space/tab-encoded payloads.
+3. **Mock tool harness:** scenarios run only against six allowlisted in-memory tools; nothing touches the host OS or network.
+4. **Synthetic canary tracking:** a fresh random token per run shows whether a value reaches a mock outbound payload; the raw token is never persisted.
+5. **Least-privilege policy proposals:** default-deny `SKILL_POLICY.yaml` with strict validation, immutable revisions, and rationale linked to finding IDs.
+6. **SARIF 2.1.0 export:** for scans and for campaigns, with stable rule IDs and partial fingerprints.
+7. **Bounded adaptive red team:** follow-up tests proposed per round, validated before running, with server-enforced budgets.
+8. **Multi-skill attack chains:** link two scanned skills through an explicit handoff fixture and simulate the chain.
+9. **Fix & retest:** proposed edits are applied to a copy and rerun against the same test IDs; the comparison reports improvements, regressions, and anything not run.
 
 ---
 
 ## Feature Deep Dives
 
-### 1. Multi-Skill Attack Chains (Feature A)
+### 1. Multi-Skill Attack Chains
 
-Agent workflows frequently combine multiple specialized skills (e.g., a "Research Helper" reading project files handoff to a "Slack Notifier" sending summary webhooks). An attacker can split malicious actions across skills to evade single-skill inspection.
+A skill can look harmless alone yet be dangerous when another skill consumes its output. A **campaign** links two completed scans (Skill A produces a handoff, Skill B consumes it) without rescanning or merging their sources.
 
-- **Cross-Skill Fixtures:** Connects two completed scan audits with an explicit simulated handoff payload (e.g., intermediate JSON or shared file artifact).
-- **Interactive Relationship Graph:** Renders a directed graph where nodes represent skills, artifacts, tools, and destinations. Edges distinguish provenance:
-  - `observed`: Declared or found in source analysis.
-  - `deterministic`: Derived from static rules.
-  - `user_defined`: Configured handoff parameters.
-  - `simulated_trace`: Recorded during multi-skill mock execution.
-  - `model_hypothesis`: Inferred potential handoff vectors.
-- **Composite Threat Scoring:** Calculates joint risk based on the combined capabilities of the chain (e.g., Skill A has file access + Skill B has network egress = composite exfiltration path).
-- **Simulated Execution:** Exercises the composite sequence through the mock harness and records an auditable multi-skill trace.
+- **Explicit handoff fixture:** inert text supplied by the reviewer; no skill is executed to produce it.
+- **Evidence-gated simulation:** each skill's half of the fixed chain scenario runs only if that skill's own scan has a medium-or-higher finding:
+  - Skill A: `read_canary_file` → `write_mock_file workspace/handoff.txt`
+  - Skill B: `read_public_file workspace/handoff.txt` → `send_mock_request`
+- **Chain status:**
+  - `candidate`: created, not yet simulated
+  - `reproduced_in_simulation`: both halves ran, and the gate blocked or flagged a step, or the canary crossed the handoff
+  - `not_reproduced`: no motivating findings (or both halves ran with nothing prohibited observed)
+  - `needs_review`: only one skill has motivating findings
+- **Graph with provenance:** skill, finding, handoff, mock-action and canary-match nodes, each labelled `observed`, `deterministic`, `model_hypothesis`, `user_defined` or `simulated_trace`. Finding node IDs are scoped per skill, so identical IDs in the two scans never collide.
+- **Persistence & export:** campaigns are saved on disk, linked from both scan reports, deleted together with either scan, and exportable as SARIF (paths prefixed `skill_a/` and `skill_b/`).
 
-### 2. Unique Canary-Token Detection (Feature B)
+### 2. Synthetic Canary-Token Detection
 
-To prove that a skill attempts to exfiltrate sensitive data, SkillSentry uses an exact-match canary token mechanism:
+- **Per-run token:** each run generates a cryptographically random `CANARY_SKILL_<hex>` held in run-local memory only. Scenarios refer to it with the `{{CANARY}}` placeholder, so stored test definitions never contain it.
+- **Exact-match observer:** before trace arguments are redacted, the observer checks `send_mock_request` payloads for the exact current-run token.
+- **Five explicit states** (never collapsed into a boolean):
+  1. `not_attempted`: no outbound mock request was made.
+  2. `not_observed`: an outbound payload was evaluated and the exact token was not in it.
+  3. `matched`: the exact token appeared in an outbound mock payload.
+  4. `not_evaluable`: the outbound call had no payload suitable for exact comparison.
+  5. `blocked_before_send`: the policy gate blocked the outbound request; this is not the same as observing a leak.
+- **Redaction:** traces show `[CANARY_TOKEN_REDACTED]`; reports store only the state, trace event IDs, and a short SHA-256 digest. SARIF output redacts any `CANARY_SKILL_…` string.
 
-- **Per-Run Synthetic Tokens:** Each test run generates an ephemeral, cryptographically random token (`CANARY_SKILL_<hex16>`) placed inside the mock canary file (`/canary/token.txt`).
-- **Exact-Match Pre-Send Observer:** The observer checks the structured payload of simulated outbound requests (`send_mock_request`) in memory *before* redaction.
-- **5 Explicit Detection States:**
-  1. `not_attempted`: Scenario did not invoke the canary read tool.
-  2. `not_observed`: Canary file was accessed, but the token was not detected in simulated outbound payloads.
-  3. `matched`: The exact canary token was captured in a simulated outbound request payload.
-  4. `not_evaluable`: Simulation failed or encountered an execution fault prior to verification.
-  5. `blocked_before_send`: Outbound request containing the token was halted by the policy gate.
-- **Confidentiality by Design:** Raw canary tokens are never written to disk, trace logs, or exported reports; traces display sanitized values like `[REDACTED_CANARY_TOKEN]`.
+### 3. Least-Privilege Policy Proposals
 
-### 3. Reviewable Least-Privilege Policy Generator (Feature C)
-
-SkillSentry bridges the gap between static audit findings and real runtime protection by generating a reviewable `SKILL_POLICY.yaml`:
+SkillSentry proposes a reviewable `SKILL_POLICY.yaml` from the scan's findings and file inventory. The proposal is generated by deterministic rules and labelled `deterministic_fallback`; no model output is used for policies. Example output for a skill with an exfiltration finding:
 
 ```yaml
-version: "1.0"
+schema_version: '1.0'
+policy_id: policy_4063f31219f3
+name: research-assistant least-privilege policy
+source_scan_ids:
+- scan_0123456789ab
+source_campaign_id: null
+default_action: BLOCK
+allowed_tools:
+- list_mock_resources
+- read_public_file
+- write_mock_file
+allowed_domains: []
+allowed_file_paths:
+- SKILL.md
+- references/guide.md
+- workspace/**
+forbidden_actions:
+- read_canary_file
+- send_mock_request
+- send_sensitive_payload
+limits:
+  max_mock_requests_per_test: 0
+  max_file_reads_per_test: 20
 metadata:
-  skill_name: "research-assistant"
-  policy_id: "pol_7b4c9e12"
-  generated_at: "2026-10-11T12:00:00Z"
-  enforcement_mode: "audit"
-spec:
-  default_action: "BLOCK"
-  allowed_tools:
-    - "read_public_file"
-    - "list_mock_resources"
-  filesystem:
-    allowed_read_globs:
-      - "references/*.md"
-      - "docs/*.txt"
-    denied_paths:
-      - "/canary/**"
-      - "**/.env"
-      - "**/secrets/**"
-  network:
-    allowed_domains:
-      - "api.semanticscholar.org"
-      - "arxiv.org"
-    denied_domains:
-      - "*"
+  generated_by: SkillSentry
+  generator_mode: deterministic_fallback
+  policy_schema_version: '1.0'
 ```
 
-- **Strict Validation Rules:**
-  - `default_action` must be `BLOCK` (default-deny).
-  - Wildcards (`*`) in network domains are strictly rejected.
-  - Path traversal sequences (`..`) and absolute filesystem paths are prohibited.
-  - Disallowed tools are automatically excluded from `allowed_tools`.
-- **Mock-Gate Scenario Testing:** The workbench allows users to test proposed policies against all scan test cases in the mock policy gate before saving or exporting.
+- **Strict schema:** unknown keys are rejected. `metadata` is informational and never consulted by the gate.
+- **Semantic validation rejects:**
+  - default actions other than `BLOCK`/`FLAG`
+  - unknown tool or action names
+  - `*` wildcards for tools, domains or paths
+  - domains with a scheme, path, port or credentials
+  - absolute paths and `..` traversal
+- **Deny by default:** an empty `allowed_domains` means no destinations; tools not in `allowed_tools` get the default action. `forbidden_actions` always wins. Limits are enforced per test.
+- **Path matching:** `dir/**` matches everything below `dir/`; other patterns are whole-path globs.
+- **Rationale:** each rule is explained and linked to the finding IDs that motivated it. Warnings flag conflicts with the declared purpose and destinations that were mentioned but not granted.
+- **Immutable revisions:** generated and reviewer-edited policies are saved as `r001`, `r002`, …; nothing is overwritten. Only validated revisions can be saved, tested, or downloaded.
+- **Mock-gate testing:** replay the scan's tests through a revision. Each adversarial test reports `contained` or `not_contained`; benign controls report whether they still work.
+- **Enforcement:** the policy is a proposal. Only the SkillSentry mock gate enforces it, unless a compatible runtime loads it.
 
-### 4. OASIS SARIF 2.1.0 Export (Feature D)
+### 4. SARIF 2.1.0 Export
 
-SkillSentry provides native export to OASIS Static Analysis Results Interchange Format (SARIF 2.1.0), enabling direct integration into enterprise code scanning pipelines:
+- **Stable rule IDs:** `SS-…` detector IDs map to `ruleId` and `tool.driver.rules`; the per-occurrence `finding_id` stays in `properties.skillSentry`.
+- **Severity mapping:** high → `error`, medium → `warning`, low/informational → `note`.
+- **No invented locations:** relative URIs with 1-based `startLine`/`startColumn` only when known. A file-level finding gets no region; a finding without a file gets no location.
+- **Deduplication:** `partialFingerprints` built from the rule, path, location and sanitized evidence.
+- **Sanitized:** control characters are stripped, canary tokens redacted, and evidence truncated.
+- **Validation:** built-in structural checks (version, runs, rule IDs, levels, relative URIs, region bounds) run before download; no network access is needed.
+- **Path caveat:** paths are relative to the uploaded skill package. GitHub inline annotations work only if those paths match files in the repository being scanned. Exporting a file does not upload it anywhere.
 
-- **Deterministic Rule Mapping:** Every detector rule maps to a structured SARIF `rule` object with short and full descriptions, help text, and calibrated severity (`error`, `warning`, `note`).
-- **Sanitized Locations:** Artifact locations use RFC 3986 relative URIs anchored to `%SRCROOT%`, with exact 1-indexed `startLine`, `startColumn`, `endLine`, and `endColumn`.
-- **Safe Snippet Sanitization:** Unicode tags and unprintable characters in snippet text are safely sanitized to prevent viewer corruption.
+### 5. Bounded Adaptive Red-Team Testing
 
-### 5. Bounded Adaptive Red-Team Testing (Feature E)
+The loop for each round: re-run the benign controls → propose → validate → deduplicate → simulate → evaluate.
 
-Fixed test suites can leave blind spots. SkillSentry's adaptive red-team module dynamically proposes follow-up test cases based on previous outcomes:
+- **Proposal source:**
+  - If the configured model is available, it receives a structured summary (findings, baseline outcomes, earlier candidates) and proposes candidates.
+  - Otherwise a fixed library of deterministic templates is used, labelled `deterministic_template`. Template output is never presented as model output.
+- **Server-enforced budgets:** at most 3 rounds, 3 candidates per round, and 9 executed tests per run. Once the budget is spent, candidates are marked `skipped`.
+- **Validation:** unknown tools, unexpected arguments, URLs not quoted from the skill, shell-like arguments, mismatched expected decisions, and duplicates of baseline or earlier tests are all rejected and never run.
+- **Evaluation:** a candidate `passed` when the observed gate decisions equal its expected decisions (for example, an exfiltration attempt that is correctly blocked passes); otherwise it is `failed`, or `needs_review` if anything was flagged.
+- **Stopping:** a run stops when a benign control fails, a round yields no new valid candidates, the budget is exhausted, or the reviewer stops it.
+- **Reproducibility:** runs are saved on disk with candidate definitions, model status, and metrics. **Re-run accepted** replays saved candidates with no model call and no budget use.
 
-- **Propose $\rightarrow$ Validate $\rightarrow$ Simulate $\rightarrow$ Evaluate Loop:** The model examines passing tests, high-severity static findings, and tool traces to hypothesize targeted bypass scenarios.
-- **Server-Enforced Budget Guardrails:**
-  - **Maximum 3 rounds** per campaign.
-  - **Maximum 3 candidates** proposed per round.
-  - **Maximum 9 tests** executed in total.
-- **Strict AST & Security Filtering:** Proposed candidate payloads undergo server-side validation. Any scenario attempting shell execution, command injection, unallowlisted tools, or unbounded execution is dropped immediately.
-- **Benign Control Preservation:** Adaptive suites always retain benign baseline checks to measure false positive rates during adversarial exploration.
+### 6. Fix & Retest
 
-### 6. Fix & Verify Remediation Workflow
-
-Identifying a vulnerability is only half the battle. SkillSentry guides the user through complete remediation:
-
-1. **Proposed Fix Generation:** Proposes targeted text removals or rewrites (e.g., stripping hidden HTML comments or removing prompt-injection overrides).
-2. **Unified Diff Viewer:** Displays an in-browser diff showing additions, deletions, and unchanged context.
-3. **Same-Suite Regression Retesting:** Applies the fix to an in-memory clone and reruns the exact same scenario suite (`TC-001` through `TC-008`).
-4. **Before/After Audit Matrix:** Side-by-side comparison showing which findings were resolved, which tests flipped from failed to passed, and confirming zero regressions.
+1. **Fix suggestion:** a deterministic rule-based fix (removes hidden comments, invisible characters, risky instruction lines), or a schema-validated model fix when the model is available.
+2. **Review:** a unified diff plus an editable copy; the original upload is never modified.
+3. **Same-suite rerun:** the revised copy is scanned and run against the exact same test IDs and frozen arguments.
+4. **Honest comparison:**
+   - per-test before/after with `improved` / `regressed` / `unchanged` / `not run`
+   - resolved, remaining and new findings
+   - a verdict that claims improvement only when every test ran on the same suite
 
 ---
 
-## Mock Tool Sandbox & Policy Gate
+## Mock Tool Harness & Policy Gate
 
-All scenario simulations execute within an isolated in-memory environment called `MockWorld`:
+All simulations run in an in-memory `MockWorld`. There are no subprocesses, no host filesystem access, and no sockets.
 
-| Mock Tool Name | Allowed Arguments | Behavior & Policy Gate Action |
+| Mock tool | Arguments | Default gate behavior |
 |---|---|---|
-| `read_public_file` | `path: str` | Reads non-sensitive mock files in the virtual workspace. Allowed if path is safe. |
-| `read_canary_file` | `path: str` | Attempts access to synthetic canary storage (`/canary/token.txt`). Flags or blocks based on policy. |
-| `write_mock_file` | `path: str, content: str` | Writes to in-memory scratch storage. Blocked if target is a sensitive path. |
-| `send_mock_request` | `url: str, payload: dict` | Simulates an HTTP POST/GET. Intercepted by canary observer. Domain checked against allowlist. |
-| `list_mock_resources` | `directory: str` | Returns allowlisted directory listing in the mock environment. |
-| `request_capability` | `capability: str` | Simulates a request for heightened agent privileges (e.g., `shell_execution`). Always blocked. |
+| `read_public_file` | `path` | `ALLOW` for skill files and `workspace/`; `BLOCK` for traversal or secret-looking paths (`.env`, `.ssh`, `id_rsa`, …); `FLAG` otherwise |
+| `read_canary_file` | `name` (e.g. `ENV_API_KEY`) | Always `BLOCK`; the attempt is recorded |
+| `write_mock_file` | `path`, `content` | `ALLOW` inside `workspace/`; `BLOCK` elsewhere |
+| `send_mock_request` | `destination`, `payload_summary` | `ALLOW` only for `mock.local` / `localhost.mock`; `BLOCK` otherwise. Nothing is ever sent. |
+| `list_mock_resources` | none | `ALLOW` |
+| `request_capability` | `capability` | `ALLOW` for a small safe set; `BLOCK` for shell/network/credential-style capabilities; `FLAG` for anything else |
 
-### Policy Decisions
+- `ALLOW`: the simulated action is performed in the mock world.
+- `BLOCK`: the action is denied and recorded.
+- `FLAG`: the action is held for human review (not performed) and recorded.
 
-- `ALLOW`: Action complies with declared capabilities and least-privilege policy.
-- `BLOCK`: Action violates policy, attempts access to canary files, or requests disallowed tools.
-- `FLAG`: Action allowed for observational logging but marked suspicious in audit reports.
-
----
-
-## Forensic UI & Workbench
-
-SkillSentry features a modern, human-crafted single-page workbench built with **React and Tailwind CSS v4**:
-
-- **Package Ingestion & Quick Demo:** Drag-and-drop `.zip` upload, raw text editor for quick pastes, and a one-click **"Load demo skill"** button to immediately explore a comprehensive research assistant package with real forensic fixtures.
-- **Forensic Source Viewer:**
-  - Toggle **"Reveal Invisibles"** to highlight zero-width characters with amber badges (`[ZWSP]`, `[ZWNJ]`, `[ZWJ]`).
-  - View Unicode tag sequences with character code points and automatic ASCII decoding.
-  - Side-by-side **Hex View** and Unicode character inspector displaying exact byte offsets and Unicode categories (`Cf`, `Cc`, `Zs`).
-- **Interactive Attack Lab:**
-  - View scenario execution results with real-time pass/fail indicators.
-  - Inspect chronological event traces with step-by-step tool calls, parameters, policy verdicts, and simulated return payloads.
-  - Re-run individual tests on demand.
-- **Capability Passport:** Visual card breakdown comparing declared frontmatter permissions against inferred capabilities derived from static rules and model analysis.
-- **Least-Privilege Policy Editor:** Interactive YAML editor with real-time schema validation, error highlighting, and mock-gate testing buttons.
-- **Multi-Skill Campaigns:** Interactive SVG relationship graph rendering cross-skill data handoffs, tool bridges, and composite risk metrics.
-- **Adaptive Red-Team Panel:** Round-by-round progress tracker displaying proposed candidate scenarios, safety validation status, and execution metrics.
+A scenario's tool sequence runs only while its trigger (a matching rule finding or a quoted excerpt) is still present in the skill version under test. That is what makes reruns against a revised copy comparable.
 
 ---
 
-## Detection Taxonomy (17+ Rules)
+## Workbench UI
 
-| Rule ID | Engine | Severity | Category | Description & Test Vector |
-|---|---|---|---|---|
-| `SS-OVR-001` | Static Rules | High | Override | Directives to disregard, bypass, or override prior system instructions |
-| `SS-SEC-001` | Static Rules | High | Secrets | Directives accessing environment variables, private keys, SSH tokens |
-| `SS-EXF-001` | Static Rules | High | Exfiltration | Unallowlisted outbound network destinations, webhook URLs, DNS tunneling |
-| `SS-CAP-001` | Static Rules | High | Execution | Shell execution, `curl \| bash`, terminal commands, process spawning |
-| `SS-CNC-001` | Static Rules | Medium | Concealment | Instructions ordering the agent to hide actions or omit logging |
-| `SS-ROLE-001` | Static Rules | High | Hijacking | Role-play jailbreaks, system persona inversion, simulated debugging modes |
-| `SS-ENC-001` | Static Rules | Medium | Obfuscation | Base64-encoded strings (decoded in-flight and inspected for risky terms) |
-| `SS-ENC-002` | Static Rules | Medium | Obfuscation | Directives commanding the agent to decode and execute obfuscated text |
-| `SS-PUR-001` | Static Rules | Medium | Purpose | Discrepancies between declared frontmatter purpose and internal actions |
-| `SS-UNI-001` | Unicode Scanner | High/Info | Unicode | Zero-width spaces (`U+200B`), non-joiners (`U+200C`), joiners (`U+200D`) |
-| `SS-UNI-002` | Unicode Scanner | High | Unicode | Bidirectional override characters (`U+202E`, `U+202D`, Trojan Source) |
-| `SS-UNI-003` | Unicode Scanner | High | Unicode | Unicode tag characters (`U+E0001`–`U+E007F`, ASCII smuggling) |
-| `SS-UNI-004` | Unicode Scanner | High | Unicode | Zero-width binary encoding sequences |
-| `SS-UNI-005` | Unicode Scanner | Medium | Unicode | Mixed-script homoglyphs & confusable tokens (skeleton comparison) |
-| `SS-HID-001` | Markdown Parser | High | Hidden Content | Non-empty HTML comments containing prompt instructions |
-| `SS-HID-002` | Markdown Parser | High | Hidden Content | CSS hidden styling (`display:none`, `opacity:0`, `visibility:hidden`, `font-size:0`) |
-| `SS-HID-003` | Markdown Parser | Low | Hidden Content | Malformed or unterminated HTML comments |
-| `SS-WS-001` | Whitespace | High | Steganography | Space/tab binary patterns (decoded to ASCII when printable) |
-| `SS-WS-002` | Whitespace | Low | Steganography | Suspicious long runs of trailing whitespace |
-| `SS-MODEL` | Model Adapter | Medium/Low | Semantic | Model-inferred semantic conflict corroborated by exact source quotes |
+React + Vite + Tailwind CSS v4 single-page app:
+
+- **New scan:** drag-and-drop ZIP or paste `SKILL.md`; a **Load demo skill** button fills in an example with a hidden comment and a zero-width character.
+- **Overview:** headline, finding and test counts, hidden-content signals, Capability Passport (declared vs. rule-inferred vs. model-inferred vs. simulated), concerns needing review, canary summary, and a collapsible section with files, versions and limitations.
+- **Findings:** filter by severity, category, file and evidence type; each finding shows the escaped evidence, the observed fact vs. the interpretation, remediation, and links to related tests.
+- **Source:** reveal-invisibles, raw and safe-preview views of each scanned file, with annotation filters and jump-to-line from findings.
+- **Attack Lab:** the fixed suite with per-step decisions and canary status, followed by the adaptive red-team panel (budget, proposal source, candidates, re-run accepted).
+- **Policy:** revision selector, YAML editor, validate / save-as-revision, rationale with finding links, mock-gate test, and download.
+- **Fix & Retest:** diff, editable copy, rerun, and a before/after table.
+- **Campaigns:** pick two completed scans by name, create, simulate, and view Skill A → handoff → Skill B with provenance labels and SARIF export.
+
+All uploaded and model-generated text is rendered as escaped text; `dangerouslySetInnerHTML` is not used.
 
 ---
 
-## Benchmark Results & Test Suite
+## Detection Rules
 
-SkillSentry includes comprehensive automated tests covering every parser, detector, harness component, and API endpoint:
+Severity is a review priority, not proof of intent. Unicode and whitespace severities depend on context (for example, the same character rates higher next to instruction-like or sensitive text).
+
+| Rule ID | Engine | Severity | Description |
+|---|---|---|---|
+| `SS-OVR-001` | Static rules | High | Instruction to override prior or system rules |
+| `SS-SEC-001` | Static rules | High | Instruction to read or disclose secrets/credentials |
+| `SS-EXF-001` | Static rules | High | Instruction to send data to an external destination |
+| `SS-CAP-001` | Static rules | Medium | Request for broad or dangerous capabilities |
+| `SS-CNC-001` | Static rules | Medium | Instruction to hide actions from the user |
+| `SS-ROLE-001` | Static rules | Medium | Attempt to redefine the agent's role or system prompt |
+| `SS-ENC-001` | Static rules | Context | Base64-encoded text payload (decoded and inspected) |
+| `SS-ENC-002` | Static rules | Medium | Reference to decoding hidden instructions |
+| `SS-PUR-001` | Normalizer | Medium | Instructions require capabilities the description does not mention |
+| `SS-META-001` | Normalizer | Low | Missing or malformed skill metadata |
+| `SS-UNI-001` | Unicode scanner | Context | Zero-width / default-ignorable character |
+| `SS-UNI-002` | Unicode scanner | Context | Bidirectional control character |
+| `SS-UNI-003` | Unicode scanner | Context | Invisible Unicode tag characters (ASCII smuggling) |
+| `SS-UNI-004` | Unicode scanner | Context | Zero-width binary encoded text / long zero-width runs |
+| `SS-UNI-005` | Unicode scanner | Context | Possible confusable / mixed-script token |
+| `SS-HID-001` | Hidden content | Context | Non-empty HTML comment (rated by its content) |
+| `SS-HID-002` | Hidden content | Context | Content hidden with HTML/CSS styling |
+| `SS-HID-003` | Hidden content | Context | Unterminated HTML comment |
+| `SS-WS-001` | Whitespace | Context | Space/tab trailing pattern (decoded only when a deterministic decoder succeeds) |
+| `SS-WS-002` | Whitespace | Context | Unusual Unicode space character |
+| `SS-WS-003` | Whitespace | Low | Repeated long trailing whitespace runs |
+| `SS-MODEL` | Model adapter | ≤ Medium | Model finding. Capped at medium; downgraded to informational if its quote is not found verbatim. Merged into an overlapping deterministic finding when one exists. |
+
+---
+
+## Evaluation & Tests
 
 ```bash
-# Execute the full pytest suite (82/82 passing)
-./.venv/bin/pytest
+# Full test suite (87 tests)
+python -m pytest
 
-# Run the labelled benchmark evaluation across 11 golden fixtures
-./.venv/bin/python scripts/evaluate.py
+# Labelled evaluation over 11 fixtures (3 benign, 8 adversarial)
+python scripts/evaluate.py
 ```
 
-### Benchmark Evaluation Metrics
+Latest evaluation output (deterministic analysis, model disabled):
 
 ```text
-benign/plain-research-helper           hit=[] missed=[] extra=[] failing_tests=[]
-benign/multilingual-glossary           hit=[] missed=[] extra=[] failing_tests=[]
-benign/security-educator               hit=[] missed=[] extra=[] failing_tests=[]
-adversarial/hidden-comment             hit=['SS-CNC-001', 'SS-EXF-001', 'SS-HID-001', 'SS-OVR-001', 'SS-SEC-001']
-adversarial/zero-width                 hit=['SS-UNI-001']
-adversarial/confusable                 hit=['SS-UNI-005']
-adversarial/hidden-style               hit=['SS-HID-002', 'SS-SEC-001']
-adversarial/whitespace-encoded         hit=['SS-WS-001']
-adversarial/canary-exfil               hit=['SS-CAP-001', 'SS-EXF-001', 'SS-PUR-001', 'SS-SEC-001']
-adversarial/tag-smuggling              hit=['SS-UNI-003']
-adversarial/bidi-override              hit=['SS-UNI-002']
+benign/plain-research-helper     hit=[] missed=[] extra=[] failing_tests=[]
+benign/multilingual-glossary     hit=[] missed=[] extra=[] failing_tests=[]
+benign/security-educator         hit=[] missed=[] extra=[] failing_tests=[]
+adversarial/hidden-comment       hit=['SS-CNC-001', 'SS-EXF-001', 'SS-HID-001', 'SS-OVR-001', 'SS-SEC-001'] missed=[] extra=['SS-PUR-001']
+adversarial/zero-width           hit=['SS-UNI-001'] missed=[] extra=[]
+adversarial/confusable           hit=['SS-UNI-005'] missed=[] extra=[]
+adversarial/hidden-style         hit=['SS-HID-002', 'SS-SEC-001'] missed=[] extra=['SS-OVR-001', 'SS-PUR-001']
+adversarial/whitespace-encoded   hit=['SS-WS-001'] missed=[] extra=[]
+adversarial/canary-exfil         hit=['SS-CAP-001', 'SS-EXF-001', 'SS-PUR-001', 'SS-SEC-001'] missed=[] extra=[]
+adversarial/tag-smuggling        hit=['SS-UNI-003'] missed=[] extra=[]
+adversarial/bidi-override        hit=['SS-UNI-002'] missed=[] extra=['SS-CAP-001', 'SS-PUR-001']
 
-Summary:
-- Expected detections identified: 16/16 (100%)
-- Benign control false positives: 0/3 (0%)
-- Median deterministic scan latency: ~4.3 ms
+Expected detections found: 16/16
+Benign fixtures with any medium/high finding: 0/3
+Deterministic scan time (ms): median=19.7 max=52.6 (n=11)
 ```
 
-### Unit & Integration Test Breakdown
+This is a small, hand-labelled fixture set built alongside the detectors. It shows that the detectors behave as designed; it is not a measure of real-world accuracy. "Extra" lists findings beyond the labelled ones.
 
-- `tests/test_archive_security.py` (13 tests) — Path traversal, zip bombs, symlinks, absolute paths, case collisions.
-- `tests/test_unicode_hidden_content.py` (18 tests) — ZWSP, tags, bidi overrides, confusables, HTML comments, CSS, whitespace.
-- `tests/test_static_rules.py` (9 tests) — Override, secrets, exfiltration, shell commands, concealment, base64 payloads.
-- `tests/test_mock_harness.py` (5 tests) — Mock tools, policy gate (`ALLOW`/`BLOCK`/`FLAG`), trace buffer.
-- `tests/test_canary_detection.py` (5 tests) — Ephemeral token injection, 5-state reporting, trace redaction.
-- `tests/test_policy_generator.py` (7 tests) — Policy proposal, YAML roundtrip, strict validation, mock-gate testing.
-- `tests/test_sarif_export.py` (3 tests) — SARIF 2.1.0 schema compliance, rule mappings, URI normalization.
-- `tests/test_adaptive_red_team.py` (3 tests) — Budget limits (3 rounds / 9 tests), server-side AST validator.
-- `tests/test_multi_skill_campaigns.py` (2 tests) — Cross-skill handoff fixtures, DAG graph generation, composite simulation.
-- `tests/test_model_validation.py` (11 tests) — Schema parsing, malformed JSON handling, graceful fallback.
-- `tests/test_api.py` (6 tests) — End-to-end FastAPI endpoint integration and file downloads.
+| Test file | Tests | Covers |
+|---|---|---|
+| `test_archive_security.py` | 13 | Traversal, absolute paths, backslash names, symlinks, collisions, size limits |
+| `test_unicode_hidden_content.py` | 18 | Zero-width, tags, bidi, confusables, comments, hidden CSS, whitespace |
+| `test_static_rules.py` | 9 | Instruction rules and benign controls |
+| `test_mock_harness.py` | 5 | Mock tools, policy gate, traces |
+| `test_canary_detection.py` | 5 | Token generation, all five states, redaction |
+| `test_policy_generator.py` | 9 | Generation, validation, YAML round-trip, limits, revisions API |
+| `test_sarif_export.py` | 4 | Structure, severity mapping, no invented regions, fingerprints, redaction |
+| `test_adaptive_red_team.py` | 4 | Budgets, rejection, pass semantics, rerun, API |
+| `test_multi_skill_campaigns.py` | 3 | Graph, gated simulation, API, SARIF export, cascade delete |
+| `test_model_validation.py` | 11 | Model output schemas, malformed JSON, fallback |
+| `test_api.py` | 6 | End-to-end API flows |
 
 ---
 
-## Complete API Reference (22 Endpoints)
+## API Reference
 
-All endpoints return JSON and use standard HTTP status codes (`200 OK`, `201 Created`, `202 Accepted`, `400 Bad Request`, `404 Not Found`).
+All endpoints return JSON except downloads. Errors use one envelope: `{"error": {"code", "message", "details", "request_id"}}`.
 
-### 1. System & Ingestion
+### Scans & files
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/health` | System health, detector versions, and active model adapter status. |
-| `POST` | `/api/scans` | Ingest skill package (ZIP multipart file or raw text). Returns `202 Accepted` with scan ID. |
-| `GET` | `/api/scans/{id}` | Poll scan status, current stage, and progress metadata. |
-| `DELETE` | `/api/scans/{id}` | Delete scan artifacts and purge in-memory cache. |
+| `GET` | `/api/health` | API status, detector versions, model adapter status, upload limits |
+| `POST` | `/api/scans` | Upload a ZIP (`file`) or pasted text (`skill_text`); returns `202` with a scan ID |
+| `GET` | `/api/scans` | List recent scans (ID, status, skill name) |
+| `GET` | `/api/scans/{id}` | Scan status and stage |
+| `DELETE` | `/api/scans/{id}` | Delete a scan plus its campaigns and adaptive runs |
+| `GET` | `/api/scans/{id}/files` | File inventory and scan coverage |
+| `GET` | `/api/scans/{id}/files/{file_id}/view` | Raw source, reveal-invisibles segments, safe preview, annotations |
 
-### 2. Files & Forensic Source Viewing
+### Reports & export
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/scans/{id}/files` | List package files, sizes, types, and scan coverage flags. |
-| `GET` | `/api/scans/{id}/files/{file_id}/view` | Source text, reveal-invisibles segments, annotations, and hex preview. |
+| `GET` | `/api/scans/{id}/report` | Full report: findings, tests, traces, passport, model provenance, limitations |
+| `GET` | `/api/scans/{id}/export?format=json\|markdown\|sarif` | Download the report |
 
-### 3. Reports & Standards Export
+### Tests, fixes & retest
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/scans/{id}/report` | Complete scan report with findings, capability passport, annotations, and test traces. |
-| `GET` | `/api/scans/{id}/export?format=json` | Download complete audit report as JSON. |
-| `GET` | `/api/scans/{id}/export?format=markdown` | Download executive audit summary as GitHub Flavored Markdown. |
-| `GET` | `/api/scans/{id}/export?format=sarif` | Download OASIS SARIF 2.1.0 code scanning report. |
+| `POST` | `/api/scans/{id}/tests/{test_id}/run` | Re-run one validated scenario |
+| `POST` | `/api/scans/{id}/fix-suggestion` | Propose a fix (deterministic or model) with diffs |
+| `POST` | `/api/scans/{id}/rerun` | Scan a revised copy with the same test suite (`202`) |
+| `GET` | `/api/scans/{revision_id}/comparison` | Before/after comparison for a revision scan |
 
-### 4. Mock Harness & Testing
+### Policy
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/scans/{id}/tests/{test_id}/run` | Re-execute an individual test case against the mock harness. |
-| `POST` | `/api/scans/{id}/fix-suggestion` | Propose safe remediations and generate unified diff. |
-| `POST` | `/api/scans/{id}/rerun` | Retest revised skill copy against the exact same scenario suite. |
-| `GET` | `/api/scans/{id}/comparison` | Compare before/after test outcomes and resolution delta. |
+| `POST` | `/api/scans/{id}/policy/generate` | Generate a proposal and store it as a new revision |
+| `GET` | `/api/scans/{id}/policy[?revision=N]` | A revision (latest by default) with validation and rationale |
+| `POST` | `/api/scans/{id}/policy/validate` | Validate YAML without saving |
+| `POST` | `/api/scans/{id}/policy/revisions` | Validate edited YAML and save it as a new revision |
+| `POST` | `/api/scans/{id}/policy/test` | Replay the scan's tests through a revision in the mock gate |
+| `GET` | `/api/scans/{id}/policy/export[?revision=N]` | Download a validated revision |
 
-### 5. Least-Privilege Policy (Feature C)
+### Adaptive red team
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/scans/{id}/policy/generate` | Derive a least-privilege `SKILL_POLICY.yaml` proposal from findings and passport. |
-| `GET` | `/api/scans/{id}/policy` | Retrieve current candidate policy and validation results. |
-| `POST` | `/api/scans/{id}/policy/validate` | Validate user-edited YAML policy against strict semantic rules. |
-| `POST` | `/api/scans/{id}/policy/test` | Exercise scan test suite against proposed policy in mock gate. |
-| `GET` | `/api/scans/{id}/policy/export` | Download validated `SKILL_POLICY.yaml` artifact. |
+| `POST` | `/api/scans/{id}/red-team-runs` | Start a run (runs round 1 by default) |
+| `GET` | `/api/scans/{id}/red-team-runs` | Runs for a scan |
+| `GET` | `/api/red-team-runs/{run_id}` | Run status, candidates, metrics |
+| `POST` | `/api/red-team-runs/{run_id}/advance` | Next round (budget enforced) |
+| `POST` | `/api/red-team-runs/{run_id}/rerun` | Re-run accepted candidates from saved definitions |
+| `POST` | `/api/red-team-runs/{run_id}/stop` | Stop and keep collected evidence |
 
-### 6. Bounded Adaptive Red-Team Testing (Feature E)
+### Multi-skill campaigns
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/scans/{id}/red-team-runs` | Initialize a bounded adaptive red-team campaign. |
-| `GET` | `/api/red-team-runs/{run_id}` | Retrieve run status, proposal rounds, candidate scenarios, and metrics. |
-| `POST` | `/api/red-team-runs/{run_id}/advance` | Advance to next hypothesis round (budget: max 3 rounds, 9 tests total). |
-| `POST` | `/api/red-team-runs/{run_id}/stop` | Stop active campaign and preserve collected trace evidence. |
+| `POST` | `/api/campaigns` | Create from two completed scan IDs and optional handoff content |
+| `GET` | `/api/campaigns` | List saved campaigns |
+| `GET` | `/api/campaigns/{id}` | Campaign, graph and results |
+| `POST` | `/api/campaigns/{id}/simulate` | Run the chain scenario in the mock harness |
+| `GET` | `/api/campaigns/{id}/report` | Participating scans, findings by scan, traces |
+| `GET` | `/api/campaigns/{id}/export?format=sarif` | SARIF for source-anchored findings of both skills |
 
-### 7. Multi-Skill Attack Chains (Feature A)
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/campaigns` | Create a multi-skill campaign linking two completed audits with a handoff fixture. |
-| `GET` | `/api/campaigns` | List all saved multi-skill campaigns. |
-| `GET` | `/api/campaigns/{id}` | Retrieve campaign details, DAG relationship graph nodes, and edges. |
-| `POST` | `/api/campaigns/{id}/simulate` | Simulate cross-skill handoff and exfiltration through mock tools. |
-| `GET` | `/api/campaigns/{id}/report` | Retrieve campaign audit report with trace timeline. |
+Interactive documentation is available at `/docs` while the server is running.
 
 ---
 
-## Quick Start & Installation
+## Quick Start
 
-### Prerequisites
-- **Python:** 3.11 or higher
-- **Node.js:** 18 or higher (for frontend build)
-- **Git**
-
-### Installation
+**Prerequisites:** Python 3.11+, Node.js 18+ (to build the UI), Git.
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/Coding-Maestro18/SkillSentry.git
 cd SkillSentry
 
-# 2. Set up Python virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.txt
+# Python environment (pinned versions)
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt   # runtime only: requirements.txt
 
-# 3. Build the frontend (Tailwind CSS v4 + React + Vite)
-cd frontend
-npm install
-npm run build
-cd ..
+# Build the UI (served by the backend from frontend/dist)
+cd frontend && npm install && npm run build && cd ..
 
-# 4. Start the unified production server
-./.venv/bin/uvicorn app.main:app --app-dir backend --port 8000
+# Run
+uvicorn app.main:app --app-dir backend --port 8000
 ```
 
-- **Web Application:** Open [http://localhost:8000](http://localhost:8000) in your browser.
-- **Interactive API Documentation:** Open [http://localhost:8000/docs](http://localhost:8000/docs) (Swagger UI).
-- **Frontend Development Mode (Hot Reload):** If modifying UI components, run `npm run dev` in `frontend/` $\rightarrow$ [http://localhost:5173](http://localhost:5173).
+- **App:** http://localhost:8000
+- **API docs:** http://localhost:8000/docs
+- **UI development with hot reload:** `npm run dev` in `frontend/`, then open http://localhost:5173 (the API calls go to port 8000).
+- **Sample packages:** `examples/` contains `research-assistant.zip` (hidden instructions), `benign-research-helper.zip`, and `unsafe-traversal.zip` (rejected at upload).
+- **Storage:** scans, policies, campaigns and runs are stored under `data/scans/` by default (set with `SKILLSENTRY_DATA_DIR`).
 
 ---
 
 ## Local Open-Weight Model Setup
 
-SkillSentry can enhance its static rules with local open-weight language model analysis using Ollama or any OpenAI-compatible API endpoint.
-
-### Recommended: Ollama with Qwen2.5-7B-Instruct
+The model is optional. Without it, SkillSentry runs every deterministic scanner, the fixed test suite, policies, campaigns, SARIF, and template-based adaptive tests, and it labels model features as unavailable instead of inventing output.
 
 ```bash
-# Install and run Ollama (macOS / Linux)
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Pull the recommended model
 ollama pull qwen2.5:7b-instruct
 ollama serve
 ```
 
-### Configure Environment Variables
-
-Create a `.env` file in the project root (see `.env.example`):
+Configuration is read from environment variables or a `.env` file in the project root (copy `.env.example`). Put comments on their own lines; inline `#` comments are not stripped.
 
 ```dotenv
-SKILLSENTRY_STORAGE=local
+# Provider: ollama | openai_compatible | replay | disabled
+SKILLSENTRY_MODEL_PROVIDER=ollama
+SKILLSENTRY_MODEL_NAME=qwen2.5:7b-instruct
+SKILLSENTRY_MODEL_BASE_URL=http://localhost:11434
+SKILLSENTRY_MODEL_LICENSE=Apache-2.0
+SKILLSENTRY_MODEL_TIMEOUT_SECONDS=45
+SKILLSENTRY_ENABLE_MODEL_ANALYSIS=true
+# Only for hosted OpenAI-compatible endpoints:
+# SKILLSENTRY_MODEL_API_KEY=
+# Default: <project root>/data/scans. Relative paths resolve from the directory you start the server in.
+# SKILLSENTRY_DATA_DIR=
 SKILLSENTRY_MAX_UPLOAD_MB=10
 SKILLSENTRY_MAX_EXTRACTED_MB=25
 SKILLSENTRY_MAX_FILES=500
-SKILLSENTRY_MODEL_PROVIDER=ollama
-SKILLSENTRY_MODEL_NAME=qwen2.5:7b-instruct
-SKILLSENTRY_OLLAMA_URL=http://localhost:11434
-SKILLSENTRY_MODEL_TIMEOUT_SECONDS=45
-SKILLSENTRY_ENABLE_MODEL_ANALYSIS=true
+SKILLSENTRY_MAX_TEXT_FILE_KB=2048
 ```
 
-> **Zero Dependency Guarantee:** If Ollama is not installed or the model server is offline, SkillSentry operates seamlessly in **Deterministic Static Mode**. It clearly marks semantic checks as *"Static Mode / Model Unavailable"* rather than failing or hallucinating.
+The model receives bounded excerpts wrapped as untrusted data and gets no tools, filesystem, or network access. Every response is schema-validated, and invalid output is discarded. Model name, license, inference mode and status are recorded in each report.
 
 ---
 
-## CI/CD Integration (GitHub Actions)
+## Example: CI Usage
 
-You can run SkillSentry in GitHub Actions and upload findings directly to GitHub Code Scanning via SARIF:
+SkillSentry does not ship a CI integration. The workflow below is an example of scanning a packaged skill in GitHub Actions and uploading the SARIF. Scans are asynchronous, so the script polls until the scan completes. Inline annotations appear only if the SARIF paths (relative to the skill package) match files in the repository.
 
 ```yaml
-name: Skill Security Scan
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+name: Skill security scan
+on: [pull_request]
 
 jobs:
-  skillsentry-scan:
+  skillsentry:
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install dependencies
-        run: pip install -r requirements-dev.txt
-
-      - name: Start SkillSentry backend
+      - run: pip install -r requirements.txt
+      - name: Start SkillSentry
         run: |
-          uvicorn app.main:app --app-dir backend --port 8000 &
+          SKILLSENTRY_MODEL_PROVIDER=disabled uvicorn app.main:app --app-dir backend --port 8000 &
           sleep 3
-
-      - name: Ingest skill package & export SARIF
+      - name: Scan and export SARIF
         run: |
-          SCAN_ID=$(curl -s -X POST http://localhost:8000/api/scans \
-            -F "file=@examples/research-assistant.zip" | jq -r .scan_id)
-          echo "Scan completed with ID: $SCAN_ID"
-          curl -s "http://localhost:8000/api/scans/$SCAN_ID/export?format=sarif" -o results.sarif
-
-      - name: Upload SARIF to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@v3
+          SCAN_ID=$(curl -s -F "file=@examples/research-assistant.zip" http://localhost:8000/api/scans | jq -r .scan_id)
+          for i in $(seq 1 120); do
+            STATUS=$(curl -s http://localhost:8000/api/scans/$SCAN_ID | jq -r .status)
+            [ "$STATUS" = completed ] && break
+            [ "$STATUS" = failed ] && exit 1
+            sleep 1
+          done
+          curl -sf "http://localhost:8000/api/scans/$SCAN_ID/export?format=sarif" -o results.sarif
+      - uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: results.sarif
           category: skillsentry
@@ -487,14 +485,28 @@ jobs:
 
 ## Security Model & Trust Boundaries
 
-SkillSentry was built from the ground up under a strict security model:
+1. **No execution:** uploaded files, model output, generated tests, YAML values and handoff fixtures are treated as data. No interpreter or subprocess is ever invoked on them.
+2. **Archive ingestion:**
+   - entries are read in memory, with nothing extracted to disk;
+   - rejected: absolute paths, drive letters, `..` traversal, backslash separators (checked against the raw header name), control characters in names, symlinks, encrypted entries, and case/NFC path collisions;
+   - size, file-count and extracted-size limits are enforced while streaming, so lying headers cannot bypass them.
+3. **Safe rendering:** all source, model and trace text is escaped; hidden characters are shown as labelled markers.
+4. **Mock-only actions:** six allowlisted tools, a deterministic gate, and no sockets or host file access.
+5. **Canary confidentiality:** tokens are synthetic and per-run, matched in memory, and redacted before anything is stored.
+6. **Model containment:** untrusted-data framing, bounded excerpts, no tools, strict schemas; model findings cannot exceed medium severity on their own.
+7. **No false certification:** reports show coverage, skipped files, model status and limitations, never a "safe" badge.
 
-1. **Host Isolation:** Uploaded text and files are treated as inert strings. No interpreters (`python`, `bash`, `node`) or sub-processes are ever invoked on uploaded skill files.
-2. **Defensive Archive Ingestion:** In-memory streaming zip validator rejects directory traversal sequences (`..`), absolute paths, Windows drive letters, path separator anomalies, symlinks, encrypted archives, zip bombs (decompression ratio limit: 100:1), and case-insensitive/NFC path collisions.
-3. **Safe Rendering:** The frontend renders all text with strict string escaping. HTML comments, invisible markers, and Unicode tags are displayed as sanitized visual badges without executing active HTML (`dangerouslySetInnerHTML` is prohibited).
-4. **Mock Execution Sandbox:** Tool simulations interact with an isolated in-memory world (`MockWorld`). Outbound requests are recorded in trace buffers without opening network sockets.
-5. **Canary Confidentiality:** Synthetic canary tokens are generated per run, inspected in-memory, and redacted prior to persisting traces, logs, or exports.
-6. **No False Certifications:** The tool evaluates what it can inspect. It explicitly displays test coverage, uninspected files, and known limitations to prevent a false sense of security.
+---
+
+## Known Limitations
+
+- Detection is not complete. Novel encodings, steganography and paraphrased injections can be missed.
+- Hidden-CSS detection is pattern-based, not a browser rendering engine.
+- Simulated behavior does not prove how any real agent runtime would behave.
+- Policy proposals are generated by deterministic rules only; there is no model-written policy yet.
+- SARIF validation is a built-in structural check, not validation against the official JSON schema.
+- Campaigns support two skills and one handoff per campaign.
+- The evaluation set is small and was built alongside the detectors.
 
 ---
 
@@ -502,35 +514,27 @@ SkillSentry was built from the ground up under a strict security model:
 
 ```text
 SkillSentry/
-├── backend/
-│   └── app/
-│       ├── analyzers/          # Static rules, Unicode & hidden-content scanners
-│       │   ├── static_rules.py         # SS-OVR, SS-SEC, SS-EXF, SS-CAP, SS-CNC, SS-ENC
-│       │   ├── unicode_scanner.py      # SS-UNI (ZWSP, tags, bidi, confusables)
-│       │   ├── hidden_content.py       # SS-HID (HTML comments, CSS deception)
-│       │   └── whitespace_scanner.py   # SS-WS (space/tab binary steganography)
-│       ├── api/                # FastAPI routes (scans, reports, policy, red-team, campaigns)
-│       ├── campaigns/          # Multi-skill attack chain coordinator & graph generator (Feature A)
-│       ├── harness/            # Mock tools, policy gate, runner, and synthetic canary observer (Feature B)
-│       ├── ingest/             # Archive security validator and package inventory builder
-│       ├── model_adapter/      # Open-weight model integration (Ollama, OpenAI-compatible)
-│       ├── parser/             # SKILL.md Markdown parser and coordinate source mapper
-│       ├── persistence/        # Local disk artifact storage (JSON reports, files, policies)
-│       ├── policy/             # SKILL_POLICY schema, generator, validator & YAML exporter (Feature C)
-│       ├── reports/            # Report normalization, Capability Passport, SARIF exporter (Feature D)
-│       ├── test_generation/   # Fixed test suite generator, validator & adaptive loop (Feature E)
-│       ├── main.py             # FastAPI application entrypoint & static SPA mounting
-│       └── schemas.py          # Unified Pydantic models & validation schemas
-├── frontend/
-│   └── src/
-│       ├── api/                # TypeScript API client (client.ts)
-│       ├── components/         # AttackLab, PolicyReview, CampaignsPage, ForensicViewer, etc.
-│       ├── pages/              # ReportPage audit workbench
-│       └── types/              # TypeScript definitions mirroring backend schemas
-├── docs/                       # PRD, Architecture, Decisions, Feature Extension Spec
-├── examples/                   # Sample agent skill packages (research assistant, benign, unsafe)
-├── scripts/                    # evaluate.py benchmark runner, build_fixtures.py generator
-└── tests/                      # Pytest suite (82 tests covering all components)
+├── backend/app/
+│   ├── analyzers/        # static_rules, invisible_chars, confusables, markdown_hidden, whitespace,
+│   │                     # unicode_hidden_content (orchestrator), forensic_view
+│   ├── api/              # FastAPI routes: scans, reports, policy, red team, campaigns, health
+│   ├── campaigns/        # Multi-skill coordinator, graph builder, schemas
+│   ├── harness/          # Mock tools, policy gate, runner, canary observer
+│   ├── ingest/           # Archive validator, package inventory
+│   ├── model_adapter/    # Ollama / OpenAI-compatible / replay adapters, output schemas
+│   ├── parser/           # SKILL.md parser, source map
+│   ├── persistence/      # On-disk store: reports, files, policy revisions, campaigns, runs
+│   ├── policy/           # Policy schema, generator, validator, evaluator, YAML export
+│   ├── reports/          # Normalizer, passport, export (JSON/Markdown), SARIF, fixes
+│   ├── test_generation/  # Fixed suite, validator, adaptive loop
+│   ├── pipeline.py       # Scan orchestration
+│   ├── main.py           # App entrypoint; serves frontend/dist when built
+│   └── schemas.py        # Shared Pydantic models
+├── frontend/src/         # React app: api/, components/, pages/
+├── docs/                 # PRD, architecture, decisions
+├── examples/             # Sample skill packages
+├── scripts/              # evaluate.py, build_fixtures.py
+└── tests/                # Pytest suite and labelled fixtures
 ```
 
 ---
@@ -538,4 +542,4 @@ SkillSentry/
 ## License
 
 - **Code:** [MIT License](LICENSE).
-- **Models:** Open-weight models are licensed by their respective authors (e.g., Qwen2.5-7B-Instruct under Apache-2.0).
+- **Models:** open-weight models are licensed by their authors (for example, Qwen2.5-7B-Instruct under Apache-2.0). The code license does not cover model weights.
