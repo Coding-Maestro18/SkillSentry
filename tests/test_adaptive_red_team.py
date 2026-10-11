@@ -123,3 +123,25 @@ def test_api_red_team_endpoints():
     stop_res = client.post(f"/api/red-team-runs/{run_id}/stop")
     assert stop_res.status_code == 200
     assert stop_res.json()["status"] == "stopped"
+
+
+def test_adaptive_pass_means_expected_decisions_and_rerun():
+    report = ScanReport(scan_id="scan_adaptive_eval", created_at=utcnow(), input_kind="text",
+                        status=ScanState.completed, findings=[], files=[])
+    files = {"SKILL.md": "harmless"}
+    run = advance_red_team_run(create_red_team_run(report), report, files)
+    assert run.proposal_source == "deterministic_template"
+    executed = [c for c in run.candidates if c.result is not None]
+    assert executed
+    # A correctly blocked attack matches its expected decisions and therefore passes.
+    for c in executed:
+        observed = [e.policy_decision for e in c.result.events]
+        assert (c.status == "passed") == (observed == c.expected_policy_decisions)
+    assert all(c.status == "rejected" and not c.tool_sequence for c in run.candidates if c.result is None)
+
+    from app.test_generation.adaptive import rerun_accepted
+    before = [(c.candidate_id, c.status) for c in run.candidates]
+    run = rerun_accepted(run, report, files)
+    assert [(c.candidate_id, c.status) for c in run.candidates] == before
+    assert run.metrics["reruns"] == 1
+    assert run.metrics["tests_executed"] == len(executed)  # rerun does not consume budget

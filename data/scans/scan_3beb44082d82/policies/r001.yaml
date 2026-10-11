@@ -1,0 +1,27 @@
+schema_version: '1.0'
+policy_id: policy_375b70de7dc5
+name: research-assistant least-privilege policy
+source_scan_ids:
+- scan_3beb44082d82
+source_campaign_id: null
+default_action: BLOCK
+allowed_tools:
+- list_mock_resources
+- read_public_file
+- write_mock_file
+allowed_domains: []
+allowed_file_paths:
+- SKILL.md
+- workspace/**
+forbidden_actions:
+- read_canary_file
+- send_mock_request
+- send_sensitive_payload
+limits:
+  max_mock_requests_per_test: 0
+  max_file_reads_per_test: 20
+metadata:
+  generated_by: SkillSentry
+  generator_mode: deterministic_fallback
+  policy_schema_version: '1.0'
+  created_at: '2026-10-11T13:00:47.715695+00:00'

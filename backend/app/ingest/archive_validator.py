@@ -31,6 +31,7 @@ class RawFile:
 
 
 _SUSPICIOUS_COMPONENTS = {"", ".", ".."}
+_LOCAL_HEADER_SIG = bytes((0x50, 0x4B, 0x03, 0x04))  # "PK" 3 4
 
 
 def _validate_entry_name(name: str) -> str:
@@ -54,6 +55,21 @@ def _validate_entry_name(name: str) -> str:
     if normalized.startswith("..") or normalized.startswith("/"):
         raise IngestError("INVALID_ARCHIVE", "The ZIP contains an unsupported or unsafe path.", {"entry": name})
     return normalized
+
+
+def _raw_entry_name(data: bytes, info: zipfile.ZipInfo) -> str:
+    """Entry name exactly as stored in the local file header.
+
+    On Windows ``zipfile`` rewrites backslashes to ``/`` in both ``filename`` and
+    ``orig_filename``, which would hide a backslash-separated (unsafe) entry.
+    """
+    off = info.header_offset
+    header = data[off:off + 30]
+    if len(header) < 30 or header[:4] != _LOCAL_HEADER_SIG:
+        raise IngestError("INVALID_ARCHIVE", "Archive entry has a malformed local header.", {"entry": info.filename})
+    n = int.from_bytes(header[26:28], "little")
+    raw = data[off + 30:off + 30 + n]
+    return raw.decode("utf-8" if info.flag_bits & 0x800 else "cp437", errors="replace")
 
 
 def _is_symlink(info: zipfile.ZipInfo) -> bool:
@@ -84,6 +100,7 @@ def read_zip(data: bytes, settings: Settings) -> list[RawFile]:
     files: list[RawFile] = []
     total = 0
     for info in infos:
+        _validate_entry_name(_raw_entry_name(data, info))
         name = _validate_entry_name(info.filename)
         if _is_symlink(info):
             raise IngestError("INVALID_ARCHIVE", "Archive contains a symbolic link.", {"entry": info.filename})

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { FileJson, FileText, Shield, AlertTriangle, Eye, Terminal, Wrench, ShieldCheck, Network } from "lucide-react";
+import { Download, Shield, AlertTriangle, Eye, Terminal, Wrench, ShieldCheck } from "lucide-react";
 import { api } from "../api/client";
 import { CapabilityPassport } from "../components/CapabilityPassport";
 import { FindingList } from "../components/FindingList";
@@ -9,16 +9,15 @@ import { FixCompare } from "../components/FixCompare";
 import { PolicyReview } from "../components/PolicyReview";
 
 const TABS = [
-  { id: "overview", label: "Overview & Passport", icon: Shield },
+  { id: "overview", label: "Overview", icon: Shield },
   { id: "findings", label: "Findings", icon: AlertTriangle },
-  { id: "forensic", label: "Forensic Deception Viewer", icon: Eye },
+  { id: "forensic", label: "Source", icon: Eye },
   { id: "lab", label: "Attack Lab", icon: Terminal },
-  { id: "policy", label: "Least-Privilege Policy", icon: ShieldCheck },
-  { id: "fix", label: "Fix & Verify", icon: Wrench },
+  { id: "policy", label: "Policy", icon: ShieldCheck },
+  { id: "fix", label: "Fix & Retest", icon: Wrench },
 ];
 
-export function ReportPage({ report, onUpdate, onOpenScan, onOpenCampaigns }) {
-
+export function ReportPage({ report, onUpdate, onOpenScan }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [sourceTarget, setSourceTarget] = useState(null);
   const [focusTestId, setFocusTestId] = useState(null);
@@ -49,7 +48,7 @@ export function ReportPage({ report, onUpdate, onOpenScan, onOpenCampaigns }) {
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2.5">
             <h2 className="text-lg sm:text-xl font-bold text-slate-100 tracking-tight m-0">
-              {report.skill_name || "Unnamed Agent Skill"}
+              {report.skill_name || "Unnamed skill"}
             </h2>
             <span className="font-mono text-xs text-slate-400 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded">
               {report.scan_id}
@@ -57,8 +56,7 @@ export function ReportPage({ report, onUpdate, onOpenScan, onOpenCampaigns }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-            <span>Audit: {new Date(report.created_at).toLocaleString()}</span>
-            <span>· Input: {report.input_kind}</span>
+            <span>{new Date(report.created_at).toLocaleString()}</span>
             {report.parent_scan_id && (
               <span>
                 · Revision of:{" "}
@@ -74,46 +72,19 @@ export function ReportPage({ report, onUpdate, onOpenScan, onOpenCampaigns }) {
           </div>
         </div>
 
-        {/* Export Actions & Campaign Launcher */}
-        <div className="flex flex-wrap items-center gap-2">
-          {onOpenCampaigns && (
-            <button
-              type="button"
-              onClick={onOpenCampaigns}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 rounded-md text-xs font-medium transition-colors cursor-pointer"
-              title="Create or view cross-skill attack chain campaigns"
+        <div className="flex items-center gap-1 text-xs text-slate-400">
+          <Download size={13} className="mr-1" />
+          {[["json", "JSON"], ["markdown", "Markdown"], ["sarif", "SARIF 2.1.0"]].map(([fmt, label]) => (
+            <a
+              key={fmt}
+              className="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+              href={api.exportUrl(report.scan_id, fmt)}
+              download
+              title={fmt === "sarif" ? "SARIF file for code-scanning tools (download only; nothing is uploaded)" : undefined}
             >
-              <Network size={13} />
-              <span>Attack Campaigns</span>
-            </button>
-          )}
-          <a
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-md text-xs font-medium transition-colors"
-            href={api.exportUrl(report.scan_id, "sarif")}
-            download
-            title="Download OASIS SARIF 2.1.0 code scanning report"
-          >
-            <FileJson size={13} className="text-emerald-400" />
-            <span>Export SARIF</span>
-          </a>
-          <a
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-md text-xs font-medium transition-colors"
-            href={api.exportUrl(report.scan_id, "json")}
-            download
-            title="Download full JSON audit report bundle"
-          >
-            <FileJson size={13} />
-            <span>Export JSON</span>
-          </a>
-          <a
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-md text-xs font-medium transition-colors"
-            href={api.exportUrl(report.scan_id, "markdown")}
-            download
-            title="Download human-readable Markdown summary"
-          >
-            <FileText size={13} />
-            <span>Export Markdown</span>
-          </a>
+              {label}
+            </a>
+          ))}
         </div>
       </div>
 

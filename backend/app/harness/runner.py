@@ -9,12 +9,18 @@ runtime would behave.
 
 from __future__ import annotations
 
+from typing import Optional
+
 from ..schemas import SEVERITY_ORDER, Finding, PolicyDecision, TestCase, TestResult, TraceEvent
 from . import policy
 from .canary import CanaryObserver
 from .mock_tools import MockWorld
 
 SIMULATION_NOTE = "Simulated behavior via mock tools; not evidence of what a real agent runtime would do."
+
+# Scenario arguments may reference the current run's synthetic canary with this placeholder.
+# It is resolved in run-local memory only, so stored test definitions never contain the raw token.
+CANARY_PLACEHOLDER = "{{CANARY}}"
 
 
 def _sanitize(args: dict[str, str], observer: Optional[CanaryObserver] = None) -> dict[str, str]:
@@ -61,9 +67,9 @@ def run_test(
     for idx, call in enumerate(test.tool_sequence, start=1):
         decision, reason = policy.evaluate(call, skill_paths)
         event_id = f"{test.test_id}-E{idx:02d}"
-        observer.on_tool_call(event_id, call.tool, call.args, decision)
+        a = {k: v.replace(CANARY_PLACEHOLDER, observer.token) for k, v in call.args.items()}
+        observer.on_tool_call(event_id, call.tool, a, decision)
         allowed = decision == PolicyDecision.ALLOW
-        a = call.args
         if call.tool == "read_public_file":
             result = world.read_public_file(a.get("path", "")) if allowed else "Not read (policy)."
         elif call.tool == "read_canary_file":

@@ -62,33 +62,38 @@ export const api = {
   comparison: (id: string) => call<Comparison>(`/api/scans/${encodeURIComponent(id)}/comparison`),
   exportUrl: (id: string, format: "json" | "markdown" | "sarif") => `/api/scans/${encodeURIComponent(id)}/export?format=${format}`,
 
-  // Policy (Feature C)
-  getPolicy: (id: string) => call<any>(`/api/scans/${encodeURIComponent(id)}/policy`),
-  generatePolicy: (id: string) => call<any>(`/api/scans/${encodeURIComponent(id)}/policy/generate`, { method: "POST" }),
-  validatePolicy: (id: string, data: { yaml?: string; policy?: any }) =>
-    call<any>(`/api/scans/${encodeURIComponent(id)}/policy/validate`, json(data)),
-  testPolicy: (id: string, data: { yaml?: string; policy?: any; test_ids?: string[] }) =>
-    call<any>(`/api/scans/${encodeURIComponent(id)}/policy/test`, json(data)),
-  policyExportUrl: (id: string) => `/api/scans/${encodeURIComponent(id)}/policy/export`,
+  listScans: () => call<ScanStatus[]>("/api/scans"),
 
-  // Adaptive Red-Team (Feature E)
-  startRedTeam: (id: string, advanceFirstRound = true) =>
-    call<any>(`/api/scans/${encodeURIComponent(id)}/red-team-runs`, json({ advance_first_round: advanceFirstRound })),
-  getRedTeamRun: (runId: string) => call<any>(`/api/red-team-runs/${encodeURIComponent(runId)}`),
+  // Policy (Feature C) - every saved policy is an immutable revision
+  getPolicy: (id: string, revision?: number) =>
+    call<any>(`/api/scans/${encodeURIComponent(id)}/policy${revision ? `?revision=${revision}` : ""}`),
+  generatePolicy: (id: string) => call<any>(`/api/scans/${encodeURIComponent(id)}/policy/generate`, { method: "POST" }),
+  validatePolicy: (id: string, yaml: string) =>
+    call<any>(`/api/scans/${encodeURIComponent(id)}/policy/validate`, json({ yaml })),
+  savePolicyRevision: (id: string, yaml: string) =>
+    call<any>(`/api/scans/${encodeURIComponent(id)}/policy/revisions`, json({ yaml })),
+  testPolicy: (id: string, revision: number) =>
+    call<any>(`/api/scans/${encodeURIComponent(id)}/policy/test`, json({ revision })),
+  policyExportUrl: (id: string, revision: number) =>
+    `/api/scans/${encodeURIComponent(id)}/policy/export?revision=${revision}`,
+
+  // Adaptive red team (Feature E)
+  listRedTeamRuns: (id: string) => call<any[]>(`/api/scans/${encodeURIComponent(id)}/red-team-runs`),
+  startRedTeam: (id: string) =>
+    call<any>(`/api/scans/${encodeURIComponent(id)}/red-team-runs`, json({ advance_first_round: true })),
   advanceRedTeamRound: (runId: string) =>
     call<any>(`/api/red-team-runs/${encodeURIComponent(runId)}/advance`, { method: "POST" }),
+  rerunRedTeam: (runId: string) =>
+    call<any>(`/api/red-team-runs/${encodeURIComponent(runId)}/rerun`, { method: "POST" }),
   stopRedTeamRun: (runId: string) =>
     call<any>(`/api/red-team-runs/${encodeURIComponent(runId)}/stop`, { method: "POST" }),
 
-  // Multi-Skill Campaigns (Feature A)
+  // Multi-skill campaigns (Feature A)
   listCampaigns: () => call<any[]>("/api/campaigns"),
-  createCampaign: (data: { scan_ids: string[]; handoff_fixture_id?: string; handoff_content?: string; campaign_name?: string }) =>
-    call<any>("/api/campaigns", json(data)),
-  getCampaign: (campaignId: string) => call<any>(`/api/campaigns/${encodeURIComponent(campaignId)}`),
+  createCampaign: (data: { scan_ids: string[]; handoff_content?: string }) => call<any>("/api/campaigns", json(data)),
   simulateCampaign: (campaignId: string) =>
     call<any>(`/api/campaigns/${encodeURIComponent(campaignId)}/simulate`, { method: "POST" }),
-  getCampaignReport: (campaignId: string) =>
-    call<any>(`/api/campaigns/${encodeURIComponent(campaignId)}/report`),
+  campaignSarifUrl: (campaignId: string) => `/api/campaigns/${encodeURIComponent(campaignId)}/export?format=sarif`,
 };
 
 

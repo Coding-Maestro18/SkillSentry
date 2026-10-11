@@ -32,7 +32,7 @@ def export(scan_id: str, format: str = Query("json", pattern="^(json|markdown|sa
         sarif_data = to_sarif(r)
         valid, errs = validate_sarif(sarif_data)
         if not valid:
-            raise ApiError(500, "SARIF_VALIDATION_FAILED", "Generated SARIF failed validation: " + "; ".join(errs))
+            raise ApiError(500, "SARIF_VALIDATION_FAILED", "Generated SARIF failed validation.", {"errors": errs[:20]})
         return JSONResponse(sarif_data, media_type="application/sarif+json",
                             headers={"Content-Disposition": f'attachment; filename="{name}.sarif"'})
     return JSONResponse(to_json(r), headers={"Content-Disposition": f'attachment; filename="{name}.json"'})

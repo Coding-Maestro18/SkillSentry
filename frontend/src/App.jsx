@@ -16,19 +16,6 @@ export default function App() {
   const [isBusy, setIsBusy] = useState(false);
   const [viewMode, setViewMode] = useState("audit"); // "audit" | "campaigns"
 
-  // Initial health check and URL scan param check
-  useEffect(() => {
-    api.health()
-      .then(setHealth)
-      .catch((err) => setHealthError(err.message));
-
-    const params = new URLSearchParams(window.location.search);
-    const initialScanId = params.get("scan");
-    if (initialScanId) {
-      void openExistingScan(initialScanId);
-    }
-  }, []);
-
   const openExistingScan = async (scanId) => {
     setErrorMessage(null);
     try {
@@ -47,6 +34,20 @@ export default function App() {
       setScanStatus(null);
     }
   };
+
+  // Initial health check and URL scan param check
+  useEffect(() => {
+    api.health()
+      .then(setHealth)
+      .catch((err) => setHealthError(err.message));
+
+    const params = new URLSearchParams(window.location.search);
+    const initialScanId = params.get("scan");
+    if (initialScanId) {
+      void openExistingScan(initialScanId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const startScanJob = async (initiateCall) => {
     setIsBusy(true);
@@ -88,11 +89,7 @@ export default function App() {
         <ErrorAlert message={errorMessage} onClose={() => setErrorMessage(null)} />
 
         {viewMode === "campaigns" ? (
-          <CampaignsPage
-            currentScanId={report?.scan_id}
-            onBack={() => setViewMode("audit")}
-            onOpenScan={openExistingScan}
-          />
+          <CampaignsPage currentScanId={report?.scan_id} onOpenScan={openExistingScan} />
         ) : (
           <>
             {scanStatus && !report && <ScanProgress status={scanStatus} />}
@@ -111,7 +108,6 @@ export default function App() {
               <ReportPage
                 report={report}
                 onUpdate={setReport}
-                onOpenCampaigns={() => setViewMode("campaigns")}
                 onOpenScan={(id) => {
                   setReport(null);
                   void openExistingScan(id);
@@ -122,9 +118,8 @@ export default function App() {
         )}
       </main>
 
-
-      <footer className="border-t border-slate-800/80 px-4 py-5 text-center text-xs text-slate-500">
-        SkillSentry · MIT License · Open-source AI Agent Skill Security Harness · Findings are triage signals, not formal mathematical safety proofs.
+      <footer className="border-t border-slate-800/80 px-4 py-4 text-center text-xs text-slate-500">
+        SkillSentry · Findings are triage signals, not proof that a skill is safe.
       </footer>
     </div>
   );

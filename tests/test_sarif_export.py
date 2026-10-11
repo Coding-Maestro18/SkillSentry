@@ -146,3 +146,20 @@ def test_sarif_redacts_canary_tokens():
     res = sarif["runs"][0]["results"][0]
     assert "CANARY_SKILL_abc12345" not in res["message"]["text"]
     assert "[CANARY_TOKEN_REDACTED]" in res["message"]["text"]
+
+
+def test_sarif_does_not_invent_regions():
+    f = Finding(
+        finding_id="F-NOLINE", rule_id="RULE_FILE", category="metadata", severity=Severity.low,
+        title="File-level issue", source_file="SKILL.md", line_start=0, column_start=0, line_end=0, column_end=0,
+        evidence="", observed_fact="x", interpretation="y",
+        detector=Detector.parser, evidence_type=EvidenceType.rule_based,
+    )
+    report = ScanReport(scan_id="scan_noline", created_at=utcnow(), input_kind="text",
+                        status=ScanState.completed, findings=[f])
+    res = to_sarif(report)["runs"][0]["results"][0]
+    phys = res["locations"][0]["physicalLocation"]
+    assert phys["artifactLocation"]["uri"] == "SKILL.md"
+    assert "region" not in phys
+    assert "partialFingerprints" in res
+    assert to_sarif(report)["runs"][0]["results"][0]["partialFingerprints"] == res["partialFingerprints"]

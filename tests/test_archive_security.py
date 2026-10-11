@@ -13,7 +13,9 @@ def make_zip(entries: dict[str, bytes], symlink: str | None = None) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for name, data in entries.items():
-            zf.writestr(name, data)
+            info = zipfile.ZipInfo(name)
+            info.filename = name  # ZipInfo() rewrites backslashes to "/" on Windows; keep the raw name
+            zf.writestr(info, data)
         if symlink:
             info = zipfile.ZipInfo(symlink)
             info.external_attr = (stat.S_IFLNK | 0o777) << 16

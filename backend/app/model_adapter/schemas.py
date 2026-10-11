@@ -55,3 +55,18 @@ class ModelFixFile(BaseModel):
 class ModelFix(BaseModel):
     model_config = ConfigDict(extra="ignore")
     files: list[ModelFixFile] = Field(max_length=10)
+
+
+class ModelAdaptiveCandidate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str = Field(max_length=120)
+    hypothesis: str = Field(max_length=600)
+    target_finding_id: str = Field(default="", max_length=60)
+    target_category: str = Field(default="general", max_length=60)
+    tool_sequence: list[ModelToolCall] = Field(max_length=6)
+    expected_policy_decisions: list[Literal["ALLOW", "BLOCK", "FLAG"]] = Field(max_length=6)
+
+
+class ModelAdaptiveProposals(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    candidates: list[ModelAdaptiveCandidate] = Field(default_factory=list, max_length=6)

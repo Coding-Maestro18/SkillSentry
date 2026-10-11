@@ -191,7 +191,7 @@ class TestCase(BaseModel):
     name: str
     purpose: str
     kind: Literal["benign_control", "adversarial"]
-    origin: Literal["fixed_suite", "model_proposed"]
+    origin: Literal["fixed_suite", "model_proposed", "adaptive_template"]
     source_finding_ids: list[str] = Field(default_factory=list)
     setup_fixture: str
     trigger: TestTrigger
@@ -332,6 +332,8 @@ class ScanStatus(BaseModel):
     stage_detail: str
     error: Optional[dict[str, Any]] = None
     parent_scan_id: Optional[str] = None
+    skill_name: Optional[str] = None
+    created_at: Optional[str] = None
 
 
 class FileView(BaseModel):

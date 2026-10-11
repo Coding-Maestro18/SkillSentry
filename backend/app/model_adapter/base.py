@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Protocol
 
 from ..schemas import ModelInfo
-from .schemas import ModelAnalysis, ModelFix
+from .schemas import ModelAdaptiveProposals, ModelAnalysis, ModelFix
 
 
 @dataclass
@@ -23,6 +23,7 @@ class AdapterResult:
     info: ModelInfo
     analysis: Optional[ModelAnalysis] = None
     fix: Optional[ModelFix] = None
+    proposals: Optional[ModelAdaptiveProposals] = None
     errors: list[str] = field(default_factory=list)
 
 

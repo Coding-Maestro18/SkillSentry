@@ -129,6 +129,12 @@ def run_pipeline(
         stage(ScanState.simulating, "Running scenarios against mock tools")
         report.findings = builder.sorted()
         report.results = run_suite(tests, files, report.findings)
+        canary_counts = {k: 0 for k in ("matched", "not_observed", "not_evaluable", "blocked_before_send", "not_attempted")}
+        for r in report.results:
+            if r.canary_event:
+                canary_counts[r.canary_event.status] += 1
+        report.extensions["canary_summary"] = canary_counts
+        report.extensions["sarif"] = {"supported": True, "version": "2.1.0"}
         timings["simulate"] = int((time.monotonic() - t3) * 1000)
 
         stage(ScanState.reporting, "Building report and capability passport")

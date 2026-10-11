@@ -1,87 +1,96 @@
-"""Least-privilege policy generator from scan findings and capability passport."""
+"""Deterministic least-privilege policy proposal from scan findings and the capability passport.
+
+No model is used here; every proposal is labelled ``deterministic_fallback``. Each
+granted or denied capability is explained by ``policy_rationale`` and linked to
+the finding IDs that motivated it.
+"""
 
 from __future__ import annotations
 
 import secrets
-from typing import Optional
 
-from ..schemas import ScanReport, Severity, utcnow
-from .schema import PolicyLimits, PolicyMetadata, SkillPolicy
+from ..schemas import Finding, ScanReport, utcnow
+from .schema import PolicyLimits, PolicyRationale, SkillPolicy
+
+WORKSPACE_PATTERN = "workspace/**"
+OUTBOUND_CATEGORIES = {"data_exfiltration", "secret_disclosure"}
+CAPABILITY_CATEGORIES = {"capability_expansion", "role_hijack", "instruction_override"}
+
+
+def _ids(findings: list[Finding], categories: set[str]) -> list[str]:
+    return [f.finding_id for f in findings if f.category in categories]
 
 
 def generate_least_privilege_policy(report: ScanReport) -> SkillPolicy:
-    """Derive a conservative, least-privilege policy proposal from scan results."""
-    scan_id = report.scan_id
-    policy_id = f"policy_{secrets.token_hex(6)}"
-    name = f"{report.skill_name or 'Skill'} Least-Privilege Policy"
+    """Derive a conservative, deny-by-default policy proposal from scan results."""
+    outbound_ids = _ids(report.findings, OUTBOUND_CATEGORIES)
+    capability_ids = _ids(report.findings, CAPABILITY_CATEGORIES)
 
-    allowed_tools = ["read_public_file", "list_mock_resources"]
-    forbidden_actions = ["read_canary_file", "send_sensitive_payload"]
-    allowed_domains: list[str] = []
-    allowed_file_paths: list[str] = []
+    forbidden = {"read_canary_file", "send_sensitive_payload"}
+    if outbound_ids:
+        forbidden.add("send_mock_request")
+    if capability_ids:
+        forbidden.add("request_capability")
 
-    # Check for file paths in scanned files
-    safe_rel_paths: list[str] = []
-    for f in report.files:
-        if f.scanned and not f.relative_path.startswith("."):
-            safe_rel_paths.append(f.relative_path)
-
-    if safe_rel_paths:
-        allowed_file_paths = sorted(set(safe_rel_paths))
-    else:
-        allowed_file_paths = ["references/**", "assets/**"]
-
-    # Check findings for exfiltration or network activity
-    has_exfil = any(
-        "exfiltration" in f.category.lower()
-        or "network" in f.category.lower()
-        or "canary" in f.category.lower()
-        or "secret" in f.category.lower()
-        for f in report.findings
-    )
-
-    if has_exfil:
-        forbidden_actions.append("send_mock_request")
-        max_requests = 0
-    else:
-        # If passport has safe declared destinations
-        if report.passport and report.passport.destinations_mentioned:
-            for dest in report.passport.destinations_mentioned:
-                dest_clean = dest.strip().lower()
-                if "://" not in dest_clean and "/" not in dest_clean and dest_clean:
-                    allowed_domains.append(dest_clean)
-        max_requests = len(allowed_domains)
-
-    # Capability writes
-    has_unsafe_write = any(
-        "write" in f.category.lower() and f.severity in (Severity.high, Severity.medium)
-        for f in report.findings
-    )
-    if not has_unsafe_write:
-        allowed_tools.append("write_mock_file")
-
-    policy = SkillPolicy(
-        schema_version="1.0",
-        policy_id=policy_id,
-        name=name,
-        source_scan_ids=[scan_id],
+    skill_paths = sorted({f.relative_path for f in report.files if f.scanned and not f.relative_path.startswith(".")})
+    return SkillPolicy(
+        policy_id=f"policy_{secrets.token_hex(6)}",
+        name=f"{report.skill_name or 'Skill'} least-privilege policy",
+        source_scan_ids=[report.scan_id],
         default_action="BLOCK",
-        allowed_tools=sorted(set(allowed_tools)),
-        allowed_domains=sorted(set(allowed_domains)),
-        allowed_file_paths=allowed_file_paths,
-        forbidden_actions=sorted(set(forbidden_actions)),
-        limits={
-            "max_mock_requests_per_test": max_requests,
-            "max_file_reads_per_test": 20,
-        },
+        allowed_tools=["list_mock_resources", "read_public_file", "write_mock_file"],
+        allowed_domains=[],
+        allowed_file_paths=skill_paths + [WORKSPACE_PATTERN],
+        forbidden_actions=sorted(forbidden),
+        limits=PolicyLimits(max_mock_requests_per_test=0, max_file_reads_per_test=20),
         metadata={
             "generated_by": "SkillSentry",
             "generator_mode": "deterministic_fallback",
             "policy_schema_version": "1.0",
             "created_at": utcnow(),
-            "source_finding_count": len(report.findings),
-            "notes": "Generated least-privilege boundary proposal based on static findings and inventory.",
         },
     )
 
-    return policy
+
+def policy_rationale(report: ScanReport, policy: SkillPolicy) -> tuple[list[PolicyRationale], list[str]]:
+    """Explain each field of a generated policy; return (rationale, review warnings)."""
+    outbound_ids = _ids(report.findings, OUTBOUND_CATEGORIES)
+    capability_ids = _ids(report.findings, CAPABILITY_CATEGORIES)
+    out: list[PolicyRationale] = [
+        PolicyRationale(field="default_action", value="BLOCK",
+                        reason="Unknown tools, paths and destinations are denied unless explicitly listed."),
+        PolicyRationale(field="allowed_file_paths", value=", ".join(policy.allowed_file_paths),
+                        reason="The skill may read its own scanned files and read/write the mock workspace."),
+        PolicyRationale(field="forbidden_actions", value="read_canary_file",
+                        reason="Secret material is never needed by a skill; canary reads are always denied."),
+    ]
+    if "send_mock_request" in policy.forbidden_actions:
+        out.append(PolicyRationale(
+            field="forbidden_actions", value="send_mock_request",
+            reason="Findings instruct the agent to disclose secrets or send data externally.",
+            finding_ids=outbound_ids,
+        ))
+    else:
+        out.append(PolicyRationale(
+            field="allowed_domains", value="[] (none)",
+            reason="No outbound destination is required by evidence; outbound mock requests are not granted.",
+        ))
+    if "request_capability" in policy.forbidden_actions:
+        out.append(PolicyRationale(
+            field="forbidden_actions", value="request_capability",
+            reason="Findings try to expand capabilities or override the agent's rules.",
+            finding_ids=capability_ids,
+        ))
+
+    warnings: list[str] = []
+    dests = (report.passport.destinations_mentioned if report.passport else []) or []
+    if dests:
+        warnings.append(
+            "Destinations mentioned in the skill were not granted: " + ", ".join(dests[:5])
+            + ". Add a bare domain to allowed_domains only if the declared purpose genuinely needs it."
+        )
+    declared = " ".join((report.passport.declared_capabilities if report.passport else []) or []).lower()
+    if any(k in declared for k in ("web", "http", "network", "fetch", "api")) and not policy.allowed_domains:
+        warnings.append("The skill declares network-related capabilities, but this policy grants no destinations; "
+                        "review whether that blocks the declared purpose.")
+    return out, warnings

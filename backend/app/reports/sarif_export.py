@@ -6,6 +6,7 @@ Converts normalized findings into OASIS Static Analysis Results Interchange Form
 
 from __future__ import annotations
 
+import hashlib
 import posixpath
 import re
 from typing import Any
@@ -31,87 +32,115 @@ def _clean_text(s: str) -> str:
     return "".join(ch for ch in redacted if ch in ("\n", "\r", "\t") or ord(ch) >= 32)
 
 
-def to_sarif(report: ScanReport) -> dict[str, Any]:
-    """Convert a ScanReport into a SARIF 2.1.0 compliant JSON dictionary."""
-    rules_dict: dict[str, dict[str, Any]] = {}
-    sarif_results: list[dict[str, Any]] = []
+def _location(f: Finding, uri_prefix: str = "") -> dict[str, Any] | None:
+    """Physical location for a finding, or None when it has no source file.
 
-    for f in report.findings:
-        level = SEVERITY_TO_SARIF_LEVEL.get(f.severity, "warning")
-        rule_id = f.rule_id
+    Never invents coordinates: the region is emitted only when a line is known, and
+    end coordinates only when they are consistent with the start.
+    """
+    if not f.source_file or not f.source_file.strip():
+        return None
+    uri = uri_prefix + posixpath.normpath(f.source_file.replace("\\", "/")).lstrip("/")
+    phys: dict[str, Any] = {"artifactLocation": {"uri": uri}}
+    if f.line_start > 0:
+        region: dict[str, Any] = {"startLine": f.line_start}
+        if f.column_start > 0:
+            region["startColumn"] = f.column_start
+        if f.line_end >= f.line_start:
+            region["endLine"] = f.line_end
+            if f.column_end > 0 and (f.line_end > f.line_start or f.column_end >= f.column_start):
+                region["endColumn"] = f.column_end
+        phys["region"] = region
+    return {"physicalLocation": phys}
 
-        if rule_id not in rules_dict:
-            rules_dict[rule_id] = {
-                "id": rule_id,
-                "name": re.sub(r"[^a-zA-Z0-9_]", "_", f.category or rule_id),
-                "shortDescription": {"text": _clean_text(f.title)},
-                "fullDescription": {"text": _clean_text(f.interpretation or f.title)},
-                "defaultConfiguration": {"level": level},
-                "properties": {
-                    "category": f.category,
-                    "detector": f.detector.value if hasattr(f.detector, "value") else str(f.detector),
-                    "remediation": _clean_text(f.remediation),
-                },
-            }
 
-        result: dict[str, Any] = {
-            "ruleId": rule_id,
-            "level": level,
-            "message": {
-                "text": _clean_text(f"{f.title}: {f.observed_fact}")
-            },
+def _fingerprint(f: Finding, uri: str) -> str:
+    basis = f"{f.rule_id}|{uri}|{f.line_start}|{f.column_start}|{_clean_text(f.evidence)[:200]}"
+    return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:32]
+
+
+def _driver(version: str, findings: list[Finding]) -> dict[str, Any]:
+    rules: dict[str, dict[str, Any]] = {}
+    for f in findings:
+        if f.rule_id in rules:
+            continue
+        rules[f.rule_id] = {
+            "id": f.rule_id,
+            "name": re.sub(r"[^a-zA-Z0-9_]", "_", f.category or f.rule_id),
+            "shortDescription": {"text": _clean_text(f.title)},
+            "fullDescription": {"text": _clean_text(f.interpretation or f.title)},
+            "defaultConfiguration": {"level": SEVERITY_TO_SARIF_LEVEL.get(f.severity, "warning")},
             "properties": {
-                "skillSentry": {
-                    "findingId": f.finding_id,
-                    "category": f.category,
-                    "detector": f.detector.value if hasattr(f.detector, "value") else str(f.detector),
-                    "evidenceType": f.evidence_type.value if hasattr(f.evidence_type, "value") else str(f.evidence_type),
-                    "status": f.status.value if hasattr(f.status, "value") else str(f.status),
-                    "occurrences": f.occurrences,
-                    "sanitizedEvidence": _clean_text(f.evidence[:300]),
-                }
+                "category": f.category,
+                "detector": f.detector.value,
+                "remediation": _clean_text(f.remediation),
             },
         }
-
-        # Source location
-        if f.source_file and f.source_file.strip():
-            rel_path = posixpath.normpath(f.source_file.replace("\\", "/"))
-            loc: dict[str, Any] = {
-                "physicalLocation": {
-                    "artifactLocation": {
-                        "uri": rel_path,
-                    },
-                    "region": {
-                        "startLine": max(1, f.line_start),
-                        "startColumn": max(1, f.column_start),
-                        "endLine": max(1, f.line_end),
-                        "endColumn": max(1, f.column_end),
-                    },
-                }
-            }
-            result["locations"] = [loc]
-
-        sarif_results.append(result)
-
-    sarif_doc: dict[str, Any] = {
-        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
-        "version": "2.1.0",
-        "runs": [
-            {
-                "tool": {
-                    "driver": {
-                        "name": "SkillSentry",
-                        "version": report.analyzer_version or "1.1.0",
-                        "informationUri": "https://github.com/Coding-Maestro18/SkillSentry",
-                        "rules": list(rules_dict.values()),
-                    }
-                },
-                "results": sarif_results,
-            }
-        ],
+    return {
+        "name": "SkillSentry",
+        "version": version or "1.1.0",
+        "informationUri": "https://github.com/Coding-Maestro18/SkillSentry",
+        "rules": list(rules.values()),
     }
 
-    return sarif_doc
+
+def _result(f: Finding, uri_prefix: str = "", scan_id: str | None = None) -> dict[str, Any]:
+    props: dict[str, Any] = {
+        "findingId": f.finding_id,
+        "category": f.category,
+        "detector": f.detector.value,
+        "evidenceType": f.evidence_type.value,
+        "status": f.status.value,
+        "occurrences": f.occurrences,
+        "sanitizedEvidence": _clean_text(f.evidence[:300]),
+    }
+    if scan_id:
+        props["scanId"] = scan_id
+    if f.model_interpretation:
+        props["modelInterpretation"] = _clean_text(f.model_interpretation[:500])
+    result: dict[str, Any] = {
+        "ruleId": f.rule_id,
+        "level": SEVERITY_TO_SARIF_LEVEL.get(f.severity, "warning"),
+        "message": {"text": _clean_text(f"{f.title}: {f.observed_fact}")},
+        "properties": {"skillSentry": props},
+    }
+    loc = _location(f, uri_prefix)
+    if loc:
+        result["locations"] = [loc]
+        uri = loc["physicalLocation"]["artifactLocation"]["uri"]
+        result["partialFingerprints"] = {"skillSentryFinding/v1": _fingerprint(f, uri)}
+    return result
+
+
+def _document(runs: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"$schema": "https://json.schemastore.org/sarif-2.1.0.json", "version": "2.1.0", "runs": runs}
+
+
+def to_sarif(report: ScanReport) -> dict[str, Any]:
+    """Convert a ScanReport into a SARIF 2.1.0 log (paths are relative to the skill package root)."""
+    return _document([{
+        "tool": {"driver": _driver(report.analyzer_version, report.findings)},
+        "results": [_result(f) for f in report.findings],
+    }])
+
+
+def campaign_to_sarif(campaign_id: str, reports: list[ScanReport]) -> dict[str, Any]:
+    """Source-anchored findings from every campaign participant.
+
+    Each skill's paths are prefixed with ``skill_a/`` / ``skill_b/`` so files with the
+    same name in different packages stay distinct. Simulated traces have no source
+    location and are not exported here; they stay in the JSON campaign report.
+    """
+    findings = [f for r in reports for f in r.findings]
+    results = []
+    for role, r in zip(("skill_a/", "skill_b/"), reports):
+        results += [_result(f, role, r.scan_id) for f in r.findings]
+    version = reports[0].analyzer_version if reports else ""
+    return _document([{
+        "tool": {"driver": _driver(version, findings)},
+        "results": results,
+        "properties": {"skillSentry": {"campaignId": campaign_id, "scanIds": [r.scan_id for r in reports]}},
+    }])
 
 
 def validate_sarif(data: dict[str, Any]) -> tuple[bool, list[str]]:
@@ -151,7 +180,14 @@ def validate_sarif(data: dict[str, Any]) -> tuple[bool, list[str]]:
                     uri = ploc.get("artifactLocation", {}).get("uri", "")
                     if not uri:
                         errors.append(f"Result {idx} location {loc_idx} missing uri")
-                    if uri.startswith("/"):
+                    if uri.startswith("/") or re.match(r"^[A-Za-z]:", uri):
                         errors.append(f"Result {idx} location {loc_idx} uri must be relative, got: {uri}")
+                    region = ploc.get("region")
+                    if region is not None:
+                        start = region.get("startLine", 0)
+                        if not isinstance(start, int) or start < 1:
+                            errors.append(f"Result {idx} location {loc_idx} has invalid startLine")
+                        if region.get("endLine", start) < start:
+                            errors.append(f"Result {idx} location {loc_idx} endLine precedes startLine")
 
     return len(errors) == 0, errors

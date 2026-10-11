@@ -62,7 +62,7 @@ def list_scans() -> list[ScanStatus]:
         r = store().get(sid)
         if r:
             out.append(ScanStatus(scan_id=r.scan_id, status=r.status, stage_detail=r.stage_detail, error=r.error,
-                                  parent_scan_id=r.parent_scan_id))
+                                  parent_scan_id=r.parent_scan_id, skill_name=r.skill_name, created_at=r.created_at))
     return out
 
 

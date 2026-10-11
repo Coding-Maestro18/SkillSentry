@@ -12,6 +12,8 @@ from typing import Optional
 from ..schemas import ScanReport
 
 _ID = re.compile(r"^scan_[0-9a-f]{12}$")
+_ARTIFACT_KINDS = {"campaigns", "red_team"}
+_ARTIFACT_ID = re.compile(r"^[a-z]+_[0-9a-f]{12}$")
 
 
 class ScanStore:
@@ -72,21 +74,77 @@ class ScanStore:
             self._files[scan_id] = files
             return files
 
-    def save_policy(self, scan_id: str, policy_yaml: str) -> None:
-        with self._lock:
-            d = self._dir(scan_id)
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "SKILL_POLICY.yaml").write_text(policy_yaml, encoding="utf-8")
+    # -- policy revisions: immutable, numbered; the latest is the current one ---------
+    def _policy_dir(self, scan_id: str) -> Path:
+        return self._dir(scan_id) / "policies"
 
-    def get_policy(self, scan_id: str) -> Optional[str]:
+    def save_policy(self, scan_id: str, policy_yaml: str) -> int:
+        """Store a new immutable policy revision and return its number (1-based)."""
+        with self._lock:
+            d = self._policy_dir(scan_id)
+            d.mkdir(parents=True, exist_ok=True)
+            rev = len(self.policy_revisions(scan_id)) + 1
+            (d / f"r{rev:03d}.yaml").write_text(policy_yaml, encoding="utf-8")
+            return rev
+
+    def policy_revisions(self, scan_id: str) -> list[int]:
+        try:
+            d = self._policy_dir(scan_id)
+        except KeyError:
+            return []
+        if not d.exists():
+            return []
+        return sorted(int(p.stem[1:]) for p in d.glob("r[0-9][0-9][0-9].yaml"))
+
+    def get_policy(self, scan_id: str, revision: Optional[int] = None) -> Optional[tuple[int, str]]:
+        """Return ``(revision, yaml)`` for the given or latest revision."""
+        with self._lock:
+            revs = self.policy_revisions(scan_id)
+            if not revs:
+                return None
+            rev = revision if revision is not None else revs[-1]
+            if rev not in revs:
+                return None
+            return rev, (self._policy_dir(scan_id) / f"r{rev:03d}.yaml").read_text(encoding="utf-8")
+
+    # -- extension artifacts (campaigns, adaptive red-team runs) ---------------------
+    def _artifact_path(self, kind: str, artifact_id: str) -> Path:
+        if kind not in _ARTIFACT_KINDS or not _ARTIFACT_ID.match(artifact_id):
+            raise KeyError(artifact_id)
+        return self.root / "_" / kind / f"{artifact_id}.json"
+
+    def save_artifact(self, kind: str, artifact_id: str, data_json: str) -> None:
+        with self._lock:
+            p = self._artifact_path(kind, artifact_id)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            tmp = p.with_suffix(".json.tmp")
+            tmp.write_text(data_json, encoding="utf-8")
+            tmp.replace(p)
+
+    def get_artifact(self, kind: str, artifact_id: str) -> Optional[str]:
         with self._lock:
             try:
-                p = self._dir(scan_id) / "SKILL_POLICY.yaml"
+                p = self._artifact_path(kind, artifact_id)
             except KeyError:
                 return None
-            if not p.exists():
-                return None
-            return p.read_text(encoding="utf-8")
+            return p.read_text(encoding="utf-8") if p.exists() else None
+
+    def list_artifacts(self, kind: str) -> list[str]:
+        d = self.root / "_" / kind
+        if kind not in _ARTIFACT_KINDS or not d.exists():
+            return []
+        return [p.read_text(encoding="utf-8") for p in sorted(d.glob("*.json"))]
+
+    def link_extension(self, scan_id: str, key: str, value: str) -> None:
+        """Record an extension artifact ID on the scan report (``report.extensions[key]``)."""
+        with self._lock:
+            rep = self.get(scan_id)
+            if rep is None:
+                return
+            ids = rep.extensions.setdefault(key, [])
+            if value not in ids:
+                ids.append(value)
+                self.save(rep)
 
 
     def delete(self, scan_id: str) -> bool:

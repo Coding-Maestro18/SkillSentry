@@ -152,11 +152,18 @@ def test_campaign_api_endpoints():
     # POST /api/campaigns/{cid}/simulate
     sim_res = client.post(f"/api/campaigns/{cid}/simulate")
     assert sim_res.status_code == 200
-    assert sim_res.json()["chain_status"] == "reproduced_in_simulation"
+    # Neither skill has a finding that motivates its half of the chain, so nothing is reproduced.
+    assert sim_res.json()["chain_status"] == "not_reproduced"
 
     # GET /api/campaigns/{cid}/report
     rep_res = client.get(f"/api/campaigns/{cid}/report")
     assert rep_res.status_code == 200
     report_data = rep_res.json()
     assert len(report_data["participating_scans"]) == 2
-    assert len(report_data["traces"]) > 0
+    assert report_data["traces"] == []
+
+    # Persisted campaigns are listed, and a SARIF export is available
+    assert any(c["campaign_id"] == cid for c in client.get("/api/campaigns").json())
+    sarif = client.get(f"/api/campaigns/{cid}/export?format=sarif")
+    assert sarif.status_code == 200
+    assert sarif.json()["version"] == "2.1.0"

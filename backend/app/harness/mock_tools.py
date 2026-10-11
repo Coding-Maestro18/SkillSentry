@@ -6,6 +6,7 @@ Every tool operates on an in-memory fixture world and returns a fake summary.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 CANARY_SECRETS = {
     "ENV_API_KEY": "SKSENTRY-CANARY-API-KEY-0000",

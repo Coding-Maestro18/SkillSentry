@@ -3,25 +3,25 @@ import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { Card } from "./CommonUI";
 
 const STAGES = [
-  { id: "validating", label: "Archive & Path Safety Validation" },
-  { id: "parsing", label: "Frontmatter Parsing & Reference Graph" },
-  { id: "analyzing", label: "Invisible Unicode & Deterministic Scanners" },
-  { id: "generating_tests", label: "Contextual Model Review & Test Generation" },
-  { id: "simulating", label: "Simulating Tool Actions in Mock Harness" },
-  { id: "reporting", label: "Synthesizing Report & Capability Passport" },
+  { id: "validating", label: "Validate archive" },
+  { id: "parsing", label: "Parse files" },
+  { id: "analyzing", label: "Static & hidden-content scan" },
+  { id: "generating_tests", label: "Model review & test generation" },
+  { id: "simulating", label: "Simulate tests in mock harness" },
+  { id: "reporting", label: "Build report" },
 ];
 
 export function ScanProgress({ status }) {
   if (!status) return null;
 
-  const currentStageIndex = STAGES.findIndex((s) => s.id === status.stage);
+  const currentStageIndex = STAGES.findIndex((s) => s.id === status.status);
   const isFailed = status.status === "failed";
 
   return (
     <div className="max-w-[720px] mx-auto my-8">
       <Card
-        title="Audit Pipeline in Progress"
-        subtitle={`Scan ID: ${status.scan_id} · Stage: ${status.stage || "initializing"}`}
+        title="Scanning…"
+        subtitle={status.scan_id}
       >
         {isFailed ? (
           <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-300 text-xs flex items-center gap-2">
@@ -40,7 +40,7 @@ export function ScanProgress({ status }) {
             <div className="space-y-1.5 pt-2">
               {STAGES.map((s, idx) => {
                 const isPast = currentStageIndex > idx || status.status === "completed";
-                const isCurrent = status.stage === s.id && status.status !== "completed";
+                const isCurrent = status.status === s.id;
 
                 return (
                   <div
@@ -66,9 +66,6 @@ export function ScanProgress({ status }) {
               })}
             </div>
 
-            <div className="text-[11px] text-slate-500 text-right pt-2 border-t border-slate-800/80">
-              Deterministic passes run in ~5ms. Model calls and traces depend on adapter concurrency.
-            </div>
           </div>
         )}
       </Card>

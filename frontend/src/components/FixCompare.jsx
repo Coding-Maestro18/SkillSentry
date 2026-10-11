@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { Wrench, CheckCircle2, RotateCcw, ShieldCheck, AlertCircle } from "lucide-react";
+import { Wrench, RotateCcw, ShieldCheck } from "lucide-react";
 import { api, waitForScan } from "../api/client";
-import { Card } from "./CommonUI";
+import { Card, StatusBadge, ErrorAlert } from "./CommonUI";
 
 export function FixCompare({ report, onOpenScan }) {
   const [fixSuggestion, setFixSuggestion] = useState(null);
@@ -68,8 +68,7 @@ export function FixCompare({ report, onOpenScan }) {
   return (
     <div className="flex flex-col gap-5">
       <Card
-        title="Remediation & Regression Sandbox"
-        subtitle="Review proposed fixes and rerun the exact same attack suite against an isolated copy"
+        title="Fix & retest"
         icon={Wrench}
         actions={
           <div className="flex items-center gap-3">
@@ -93,18 +92,10 @@ export function FixCompare({ report, onOpenScan }) {
           </div>
         }
       >
-        <div className="p-3 bg-blue-500/10 border border-blue-500/25 rounded-lg text-blue-300 text-xs">
-          <span>
-            <strong>Safety Invariant:</strong> The original uploaded file is permanently read-only. Fixes are drafted to an in-memory staging buffer for reviewer validation.
-          </span>
-        </div>
-
-        {error && (
-          <div className="mt-3 p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle size={14} />
-            <span>{error}</span>
-          </div>
-        )}
+        <p className="text-xs text-slate-400 m-0">
+          Fixes are applied to a copy; the original upload is never changed. The copy is rescanned with the same test IDs.
+        </p>
+        <ErrorAlert message={error} onClose={() => setError(null)} />
 
         {busyMessage && (
           <div className="mt-3 text-xs text-blue-400 font-medium">
@@ -207,58 +198,63 @@ export function FixCompare({ report, onOpenScan }) {
         )}
       </Card>
 
-      {/* Comparison Results Dashboard */}
       {comparison && (
         <Card
-          title="Before / After Remediation Verification"
-          subtitle={`Comparing scan ${comparison.original_scan_id} → revision ${comparison.revision_scan_id}`}
+          title="Before / after"
+          subtitle={`${comparison.original_scan_id} → ${comparison.revised_scan_id} · suite ${comparison.suite_version}${comparison.same_suite ? "" : " (suites differ)"}`}
           icon={ShieldCheck}
+          actions={
+            <button type="button" className="text-xs text-blue-400 hover:underline cursor-pointer"
+              onClick={() => onOpenScan(comparison.revised_scan_id)}>
+              Open revision →
+            </button>
+          }
         >
-          <div className="space-y-4">
-            <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-200 text-xs flex items-center gap-2.5">
-              <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-              <div>
-                <strong>Regression Verification Completed:</strong> Verified resolution across identical test cases and static rules.
-              </div>
+          <div className="space-y-4 text-xs">
+            <p className="text-slate-100 font-semibold m-0">{comparison.verdict}</p>
+
+            <div className="overflow-x-auto border border-slate-800 rounded-lg">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-[#0b101d] text-slate-400 border-b border-slate-800">
+                    <th className="py-1.5 px-3 font-medium">Test</th>
+                    <th className="py-1.5 px-3 font-medium">Before</th>
+                    <th className="py-1.5 px-3 font-medium">After</th>
+                    <th className="py-1.5 px-3 font-medium">Change</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {comparison.tests.map((t) => (
+                    <tr key={t.test_id}>
+                      <td className="py-1.5 px-3 text-slate-300">{t.test_id} · {t.name}</td>
+                      <td className="py-1.5 px-3"><StatusBadge status={t.before} /></td>
+                      <td className="py-1.5 px-3"><StatusBadge status={t.after} /></td>
+                      <td className={`py-1.5 px-3 ${t.change === "improved" ? "text-emerald-300" : t.change === "regressed" ? "text-rose-300" : "text-slate-400"}`}>
+                        {t.change}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div className="bg-[#070a12] border border-slate-800 p-3.5 rounded-lg">
-                <div className="font-bold text-slate-400 uppercase tracking-wider mb-2 text-[10px]">
-                  RESOLVED FINDINGS ({comparison.resolved_findings?.length || 0}):
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {[
+                ["Resolved findings", comparison.resolved_findings, "text-emerald-300"],
+                ["Remaining findings", comparison.remaining_findings, "text-amber-300"],
+                ["New findings", comparison.new_findings, "text-rose-300"],
+              ].map(([label, items, cls]) => (
+                <div key={label} className="bg-[#070a12] border border-slate-800 p-3 rounded-lg">
+                  <div className="text-slate-400 mb-1.5">{label} ({items.length})</div>
+                  {items.length ? (
+                    <ul className={`list-disc pl-4 space-y-0.5 m-0 ${cls}`}>
+                      {items.map((x) => <li key={x}>{x}</li>)}
+                    </ul>
+                  ) : (
+                    <span className="text-slate-500">None</span>
+                  )}
                 </div>
-                {comparison.resolved_findings?.length > 0 ? (
-                  <ul className="list-disc pl-4 space-y-1 text-emerald-300 m-0">
-                    {comparison.resolved_findings.map((rf, i) => (
-                      <li key={i}>
-                        <strong>{rf.finding_id}</strong>: {rf.title}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span className="text-slate-500">No findings resolved</span>
-                )}
-              </div>
-
-              <div className="bg-[#070a12] border border-slate-800 p-3.5 rounded-lg">
-                <div className="font-bold text-slate-400 uppercase tracking-wider mb-2 text-[10px]">
-                  TEST OUTCOME SHIFTS:
-                </div>
-                <dl className="grid grid-cols-2 gap-2 m-0 font-mono text-xs">
-                  <div>
-                    <span className="text-slate-400 block">Previous Failing:</span>
-                    <strong className="text-rose-400 text-sm">
-                      {comparison.original_summary?.tests_by_status?.fail || 0}
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block">New Failing:</span>
-                    <strong className="text-emerald-400 text-sm">
-                      {comparison.revision_summary?.tests_by_status?.fail || 0}
-                    </strong>
-                  </div>
-                </dl>
-              </div>
+              ))}
             </div>
           </div>
         </Card>

@@ -163,3 +163,51 @@ def test_policy_evaluator_enforcement():
     call_outbound = ToolCall(tool="send_mock_request", args={"destination": "mock.local"})
     dec, _ = evaluate_tool_with_policy(policy, call_outbound)
     assert dec == PolicyDecision.BLOCK
+
+
+def test_schema_rejects_unknown_keys_and_enforces_limits():
+    val = validate_policy({"policy_id": "p1", "name": "x", "allow_everything": True})
+    assert not val.valid
+    assert any(e.field == "allow_everything" for e in val.errors)
+
+    policy = SkillPolicy(
+        policy_id="pol_limits", name="Limits", allowed_tools=["send_mock_request", "write_mock_file"],
+        allowed_domains=["mock.local"], allowed_file_paths=["workspace/**"],
+        limits={"max_mock_requests_per_test": 1},
+    )
+    call = ToolCall(tool="send_mock_request", args={"destination": "mock.local", "payload_summary": "x"})
+    test = SkillTestCase(
+        test_id="T1", suite_version="1", name="two sends", purpose="p", kind="adversarial", origin="fixed_suite",
+        setup_fixture="f", trigger=SkillTestTrigger(type="always"), tool_sequence=[call, call],
+        expected_policy_decisions=[PolicyDecision.ALLOW, PolicyDecision.BLOCK], expected_outcome="o",
+    )
+    events = simulate_policy_scenarios(policy, [test])[0]["events"]
+    assert [e["decision"] for e in events] == ["ALLOW", "BLOCK"]
+
+    # Writes are confined to allowed_file_paths; "workspace/**" must not match "workspaceX/..."
+    out = ToolCall(tool="write_mock_file", args={"path": "workspaceX/a.txt", "content": "x"})
+    assert evaluate_tool_with_policy(policy, out)[0] == PolicyDecision.BLOCK
+    dotdot = ToolCall(tool="write_mock_file", args={"path": "workspace/../.bashrc", "content": "x"})
+    assert evaluate_tool_with_policy(policy, dotdot)[0] == PolicyDecision.BLOCK
+
+
+def test_policy_revisions_api():
+    from app.api.deps import store
+    from app.pipeline import new_scan_id
+
+    sid = new_scan_id()
+    store().save(ScanReport(scan_id=sid, created_at=utcnow(), input_kind="text", status=ScanState.completed))
+    first = client.post(f"/api/scans/{sid}/policy/generate").json()
+    assert first["revision"] == 1 and first["validation"]["valid"]
+
+    edited = first["yaml"].replace("default_action: BLOCK", "default_action: FLAG")
+    saved = client.post(f"/api/scans/{sid}/policy/revisions", json={"yaml": edited}).json()
+    assert saved["revision"] == 2 and saved["revisions"] == [1, 2]
+    assert saved["policy"]["metadata"]["generator_mode"] == "user_edited"
+    # Revision 1 is unchanged
+    assert client.get(f"/api/scans/{sid}/policy?revision=1").json()["yaml"] == first["yaml"]
+
+    bad = client.post(f"/api/scans/{sid}/policy/revisions", json={"yaml": first["yaml"] + "\nextra_key: 1\n"})
+    assert bad.status_code == 422
+    assert client.get(f"/api/scans/{sid}/policy").json()["revision"] == 2
+    assert client.get(f"/api/scans/{sid}/policy/export").status_code == 200

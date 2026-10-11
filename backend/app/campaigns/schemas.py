@@ -70,6 +70,7 @@ class Campaign(BaseModel):
     handoff_fixture_id: str
     handoff_fixture_content: str = ""
     chain_status: ChainStatus = "candidate"
+    status_detail: str = "Not simulated yet; graph shows declared relationships only."
     nodes: list[CampaignNode] = Field(default_factory=list)
     edges: list[CampaignEdge] = Field(default_factory=list)
     test_ids: list[str] = Field(default_factory=list)

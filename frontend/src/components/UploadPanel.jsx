@@ -1,10 +1,10 @@
 import React, { useState, useRef } from "react";
-import { Upload, FileCode, Play, AlertCircle, Shield, FileText, CheckCircle2, Lock } from "lucide-react";
+import { Upload, FileCode, Play, AlertCircle } from "lucide-react";
 import { Card } from "./CommonUI";
 
 const ZWSP = String.fromCharCode(0x200b);
 
-export const DEMO_SKILL = [
+const DEMO_SKILL = [
   "---",
   "name: research-assistant",
   "description: Helps users research a topic by finding sources and writing short cited summaries.",
@@ -72,28 +72,19 @@ export function UploadPanel({ health, healthError, busy, onZip, onText }) {
   };
 
   const model = health?.model;
-  const limits = health?.limits;
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Hero Overview */}
-      <div className="text-center max-w-[760px] mx-auto pt-2">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-100 mb-2">
-          Agent Skill Security Workbench
-        </h1>
-        <p className="text-sm text-slate-400 leading-relaxed max-w-[680px] mx-auto">
-          Inspect skill packages for concealed Unicode, hidden HTML comments, credential exfiltration,
-          and authority overrides. Run deterministic policy checks and adversarial mock simulations.
+      <div className="text-center pt-2">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-100 mb-2">Scan an Agent Skill</h1>
+        <p className="text-sm text-slate-400 m-0">
+          Upload a skill ZIP or paste <code>SKILL.md</code>. Nothing in the package is executed.
         </p>
       </div>
 
-      {/* Main Grid: Upload vs Guardrails */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+      <div className="w-full max-w-[720px] mx-auto">
         {/* Left: Input Selection Card */}
-        <Card
-          title="Upload Skill"
-          titleClassName="text-lg sm:text-xl font-bold tracking-tight text-slate-100"
-        >
+        <Card>
           {/* Mode Switcher */}
           <div className="flex items-center gap-2 mb-4">
             <button
@@ -125,7 +116,7 @@ export function UploadPanel({ health, healthError, busy, onZip, onText }) {
               className="ml-auto text-xs text-blue-400 hover:text-blue-300 hover:underline cursor-pointer"
               onClick={handleLoadDemo}
             >
-              Load Demo Exploit
+              Load demo skill
             </button>
           </div>
 
@@ -157,12 +148,12 @@ export function UploadPanel({ health, healthError, busy, onZip, onText }) {
                 <div className="text-xs text-slate-400 mt-1">
                   {selectedFile
                     ? `${(selectedFile.size / 1024).toFixed(1)} KB · Click to change`
-                    : "Must contain SKILL.md in root or top-level directory (max 10 MB)"}
+                    : `SKILL.md at the root or in one top-level folder · max ${health?.limits?.max_upload_mb ?? 10} MB`}
                 </div>
               </div>
 
               <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>Standard ZIP archives (.zip)</span>
+                <span />
                 <button
                   type="button"
                   className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
@@ -170,7 +161,7 @@ export function UploadPanel({ health, healthError, busy, onZip, onText }) {
                   onClick={handleSubmitZip}
                 >
                   <Play size={13} />
-                  <span>{busy ? "Starting Scan..." : "Analyze Archive"}</span>
+                  <span>{busy ? "Starting…" : "Scan ZIP"}</span>
                 </button>
               </div>
             </div>
@@ -188,7 +179,7 @@ export function UploadPanel({ health, healthError, busy, onZip, onText }) {
               </div>
 
               <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>{pastedText.length} characters parsed as inert text</span>
+                <span>{pastedText.length} characters</span>
                 <button
                   type="button"
                   className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
@@ -196,102 +187,23 @@ export function UploadPanel({ health, healthError, busy, onZip, onText }) {
                   onClick={handleSubmitText}
                 >
                   <Play size={13} />
-                  <span>{busy ? "Analyzing..." : "Analyze Content"}</span>
+                  <span>{busy ? "Starting…" : "Scan text"}</span>
                 </button>
               </div>
             </div>
           )}
         </Card>
 
-        {/* Right: Technical Guardrails & Environment Specs */}
-        <div className="flex flex-col gap-5">
-          <Card
-            title="Inspection Scope & Safety Guardrails"
-            icon={Shield}
-          >
-            <ul className="list-disc pl-4.5 space-y-2 text-xs text-slate-300 m-0">
-              <li>
-                <strong>Files in Scope:</strong> Evaluates <code>SKILL.md</code> and supporting text files under <code>references</code> (.md, .txt, .yaml, .json, .toml).
-              </li>
-              <li>
-                <strong>Execution Firewall:</strong> Scripts, executables, and binaries are inventoried only; <strong>they are never executed</strong>.
-              </li>
-              <li>
-                <strong>Controlled Mock Tool Harness:</strong> Simulated actions (reading credentials, outbound network requests) touch only in-memory mock providers. Real network calls are impossible.
-              </li>
-              <li>
-                <strong>Archive Hardening:</strong> Rejects path traversal (<code>../</code>), absolute paths, symlinks, encrypted headers, zip bombs, and Unicode normalization collisions.
-              </li>
-            </ul>
-
-            {limits && (
-              <div className="mt-3.5 pt-3 border-t border-slate-800/80">
-                <dl className="grid grid-cols-2 gap-2 text-xs text-slate-300 font-mono m-0">
-                  <div>
-                    <span className="text-slate-400">Max Upload:</span> {limits.max_upload_mb} MB
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Max Extracted:</span> {limits.max_extracted_mb} MB
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Max Files:</span> {limits.max_files} items
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Max File Size:</span> {limits.max_text_file_kb} KB
-                  </div>
-                </dl>
-              </div>
-            )}
-          </Card>
-
-          <Card
-            title="Inference Engine Telemetry"
-            subtitle="Configured open-weight model adapter"
-            icon={FileText}
-          >
-            {healthError ? (
-              <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-300 text-xs flex items-center gap-2">
-                <AlertCircle size={14} className="shrink-0" />
-                <span>Backend offline: {healthError}</span>
-              </div>
-            ) : model ? (
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between pb-1.5 border-b border-slate-800/80">
-                  <span className="text-slate-400">Active Model</span>
-                  <span className="font-semibold text-slate-100 font-mono">
-                    {model.name} <span className="text-slate-500 font-normal">({model.license})</span>
-                  </span>
-                </div>
-                <div className="flex items-center justify-between pb-1.5 border-b border-slate-800/80">
-                  <span className="text-slate-400">Inference Provider</span>
-                  <span className="text-slate-300">{model.provider} ({model.inference_mode})</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Engine Status</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                      model.status === "ok"
-                        ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                        : "bg-amber-500/15 text-amber-300 border border-amber-500/30"
-                    }`}>
-                      {model.status}
-                    </span>
-                    <span className="text-slate-400 text-[11px]">{model.status_detail}</span>
-                  </div>
-                </div>
-
-                {model.status !== "ok" && (
-                  <div className="p-2.5 bg-blue-500/10 border border-blue-500/25 rounded-md text-blue-300 text-xs mt-2">
-                    Model is currently offline. SkillSentry runs all deterministic scanners,
-                    invisible Unicode tests, and the fixed attack suite in full fidelity.
-                  </div>
-                )}
-              </div>
-            ) : (
-              <span className="text-xs text-slate-500">Connecting to runtime...</span>
-            )}
-          </Card>
-        </div>
+        {healthError ? (
+          <div className="mt-3 p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle size={14} className="shrink-0" />
+            <span>Backend offline: {healthError}</span>
+          </div>
+        ) : model && model.status !== "ok" ? (
+          <p className="mt-3 text-xs text-slate-500 text-center">
+            Model unavailable ({model.status_detail || model.status}) — deterministic scanners and the fixed test suite still run.
+          </p>
+        ) : null}
       </div>
     </div>
   );
