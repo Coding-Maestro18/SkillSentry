@@ -1,0 +1,70 @@
+{
+  "benign/plain-research-helper": {
+    "expected_rules": [],
+    "benign": true
+  },
+  "benign/multilingual-glossary": {
+    "expected_rules": [],
+    "benign": true
+  },
+  "benign/security-educator": {
+    "expected_rules": [],
+    "benign": true
+  },
+  "adversarial/hidden-comment": {
+    "expected_rules": [
+      "SS-HID-001",
+      "SS-OVR-001",
+      "SS-SEC-001",
+      "SS-EXF-001",
+      "SS-CNC-001"
+    ],
+    "benign": false
+  },
+  "adversarial/zero-width": {
+    "expected_rules": [
+      "SS-UNI-001"
+    ],
+    "benign": false
+  },
+  "adversarial/confusable": {
+    "expected_rules": [
+      "SS-UNI-005"
+    ],
+    "benign": false
+  },
+  "adversarial/hidden-style": {
+    "expected_rules": [
+      "SS-HID-002",
+      "SS-SEC-001"
+    ],
+    "benign": false
+  },
+  "adversarial/whitespace-encoded": {
+    "expected_rules": [
+      "SS-WS-001"
+    ],
+    "benign": false
+  },
+  "adversarial/canary-exfil": {
+    "expected_rules": [
+      "SS-SEC-001",
+      "SS-EXF-001",
+      "SS-CAP-001",
+      "SS-PUR-001"
+    ],
+    "benign": false
+  },
+  "adversarial/tag-smuggling": {
+    "expected_rules": [
+      "SS-UNI-003"
+    ],
+    "benign": false
+  },
+  "adversarial/bidi-override": {
+    "expected_rules": [
+      "SS-UNI-002"
+    ],
+    "benign": false
+  }
+}
