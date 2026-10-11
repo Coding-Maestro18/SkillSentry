@@ -211,7 +211,7 @@ export function UploadPanel({ health, healthError, busy, onZip, onText }) {
           >
             <ul className="list-disc pl-4.5 space-y-2 text-xs text-slate-300 m-0">
               <li>
-                <strong>Files in Scope:</strong> Evaluates <code>SKILL.md</code> and supporting text files under <code>references/</code> (.md, .txt, .yaml, .json, .toml).
+                <strong>Files in Scope:</strong> Evaluates <code>SKILL.md</code> and supporting text files under <code>references</code> (.md, .txt, .yaml, .json, .toml).
               </li>
               <li>
                 <strong>Execution Firewall:</strong> Scripts, executables, and binaries are inventoried only; <strong>they are never executed</strong>.
