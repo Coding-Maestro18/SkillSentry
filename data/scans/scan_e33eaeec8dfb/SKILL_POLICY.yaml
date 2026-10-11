@@ -1,0 +1,28 @@
+schema_version: '1.0'
+policy_id: policy_048ad42de537
+name: Skill Least-Privilege Policy
+source_scan_ids:
+- scan_e33eaeec8dfb
+source_campaign_id: null
+default_action: BLOCK
+allowed_tools:
+- list_mock_resources
+- read_public_file
+- write_mock_file
+allowed_domains: []
+allowed_file_paths:
+- SKILL.md
+forbidden_actions:
+- read_canary_file
+- send_sensitive_payload
+limits:
+  max_mock_requests_per_test: 0
+  max_file_reads_per_test: 20
+metadata:
+  generated_by: SkillSentry
+  generator_mode: deterministic_fallback
+  policy_schema_version: '1.0'
+  created_at: '2026-10-11T10:59:34.205795+00:00'
+  source_finding_count: 1
+  notes: Generated least-privilege boundary proposal based on static findings and
+    inventory.

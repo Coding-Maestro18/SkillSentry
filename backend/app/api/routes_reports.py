@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from ..model_adapter.local_model import get_adapter
 from ..reports.export import compare, to_json, to_markdown
 from ..reports.fixes import clean_model_revision, deterministic_fix, unified_diff
+from ..reports.sarif_export import to_sarif, validate_sarif
 from ..schemas import Comparison, FixSuggestion, ScanReport, ScanState
 from .deps import ApiError, get_report_or_404, settings, store
 
@@ -21,13 +22,21 @@ def report(scan_id: str) -> ScanReport:
 
 
 @router.get("/api/scans/{scan_id}/export")
-def export(scan_id: str, format: str = Query("json", pattern="^(json|markdown)$")):
+def export(scan_id: str, format: str = Query("json", pattern="^(json|markdown|sarif)$")):
     r = get_report_or_404(scan_id)
     name = f"skillsentry-{scan_id}"
     if format == "markdown":
         return PlainTextResponse(to_markdown(r), media_type="text/markdown; charset=utf-8",
                                  headers={"Content-Disposition": f'attachment; filename="{name}.md"'})
+    if format == "sarif":
+        sarif_data = to_sarif(r)
+        valid, errs = validate_sarif(sarif_data)
+        if not valid:
+            raise ApiError(500, "SARIF_VALIDATION_FAILED", "Generated SARIF failed validation: " + "; ".join(errs))
+        return JSONResponse(sarif_data, media_type="application/sarif+json",
+                            headers={"Content-Disposition": f'attachment; filename="{name}.sarif"'})
     return JSONResponse(to_json(r), headers={"Content-Disposition": f'attachment; filename="{name}.json"'})
+
 
 
 class FixRequest(BaseModel):

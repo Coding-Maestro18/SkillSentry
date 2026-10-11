@@ -72,6 +72,23 @@ class ScanStore:
             self._files[scan_id] = files
             return files
 
+    def save_policy(self, scan_id: str, policy_yaml: str) -> None:
+        with self._lock:
+            d = self._dir(scan_id)
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "SKILL_POLICY.yaml").write_text(policy_yaml, encoding="utf-8")
+
+    def get_policy(self, scan_id: str) -> Optional[str]:
+        with self._lock:
+            try:
+                p = self._dir(scan_id) / "SKILL_POLICY.yaml"
+            except KeyError:
+                return None
+            if not p.exists():
+                return None
+            return p.read_text(encoding="utf-8")
+
+
     def delete(self, scan_id: str) -> bool:
         with self._lock:
             self._reports.pop(scan_id, None)

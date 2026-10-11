@@ -1,7 +1,14 @@
 import React from "react";
-import { Shield, RotateCcw, Cpu } from "lucide-react";
+import { Shield, RotateCcw, Cpu, Network } from "lucide-react";
 
-export function Header({ health, healthError, onReset, hasActiveReport }) {
+export function Header({
+  health,
+  healthError,
+  onReset,
+  hasActiveReport,
+  isCampaignMode,
+  onToggleCampaigns,
+}) {
   const model = health?.model;
   const isModelOnline = model?.status === "ok";
 
@@ -16,9 +23,6 @@ export function Header({ health, healthError, onReset, hasActiveReport }) {
             onClick={onReset}
             title="SkillSentry Home"
           >
-            {/* <div className="w-6.5 h-6.5 bg-gradient-to-br from-blue-500 to-blue-700 rounded flex items-center justify-center text-white shadow-[0_0_12px_rgba(59,130,246,0.35)]">
-              <Shield size={15} />
-            </div> */}
             <span>SkillSentry</span>
           </button>
         </div>
@@ -53,6 +57,19 @@ export function Header({ health, healthError, onReset, hasActiveReport }) {
             </div>
           )}
 
+          {/* Multi-Skill Campaigns button */}
+          <button
+            type="button"
+            className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-md transition-colors cursor-pointer border ${
+              isCampaignMode
+                ? "bg-blue-600 text-white border-blue-500 shadow-sm"
+                : "bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700"
+            }`}
+            onClick={onToggleCampaigns}
+          >
+            <Network size={12} />
+            <span>Campaigns</span>
+          </button>
 
           {/* Reset button */}
           {hasActiveReport && (
@@ -70,3 +87,4 @@ export function Header({ health, healthError, onReset, hasActiveReport }) {
     </header>
   );
 }
+

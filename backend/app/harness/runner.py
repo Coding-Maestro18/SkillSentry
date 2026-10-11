@@ -11,13 +11,18 @@ from __future__ import annotations
 
 from ..schemas import SEVERITY_ORDER, Finding, PolicyDecision, TestCase, TestResult, TraceEvent
 from . import policy
+from .canary import CanaryObserver
 from .mock_tools import MockWorld
 
 SIMULATION_NOTE = "Simulated behavior via mock tools; not evidence of what a real agent runtime would do."
 
 
-def _sanitize(args: dict[str, str]) -> dict[str, str]:
-    return {k: (v[:120] + "…" if len(v) > 120 else v) for k, v in args.items()}
+def _sanitize(args: dict[str, str], observer: Optional[CanaryObserver] = None) -> dict[str, str]:
+    res = {}
+    for k, v in args.items():
+        val = observer.redact_string(v) if observer else v
+        res[k] = val[:120] + "…" if len(val) > 120 else val
+    return res
 
 
 def is_triggered(test: TestCase, files: dict[str, str], findings: list[Finding]) -> bool:
@@ -33,7 +38,12 @@ def is_triggered(test: TestCase, files: dict[str, str], findings: list[Finding])
     return False
 
 
-def run_test(test: TestCase, files: dict[str, str], findings: list[Finding]) -> TestResult:
+def run_test(
+    test: TestCase,
+    files: dict[str, str],
+    findings: list[Finding],
+    canary_token: Optional[str] = None,
+) -> TestResult:
     if test.validation_status != "valid":
         return TestResult(test_id=test.test_id, status="skipped", triggered=False,
                           summary="Test failed validation and was not run.")
@@ -44,11 +54,14 @@ def run_test(test: TestCase, files: dict[str, str], findings: list[Finding]) -> 
             summary="The simulated agent found no instruction in this skill version that triggers the scenario; "
                     "no tool calls were made.",
         )
-    world = MockWorld(skill_files=files)
+    observer = CanaryObserver(token=canary_token)
+    world = MockWorld(skill_files=files, canary_token=observer.token)
     skill_paths = set(files)
     events: list[TraceEvent] = []
     for idx, call in enumerate(test.tool_sequence, start=1):
         decision, reason = policy.evaluate(call, skill_paths)
+        event_id = f"{test.test_id}-E{idx:02d}"
+        observer.on_tool_call(event_id, call.tool, call.args, decision)
         allowed = decision == PolicyDecision.ALLOW
         a = call.args
         if call.tool == "read_public_file":
@@ -64,8 +77,8 @@ def run_test(test: TestCase, files: dict[str, str], findings: list[Finding]) -> 
         else:
             result = world.request_capability(a.get("capability", ""))
         events.append(TraceEvent(
-            event_id=f"{test.test_id}-E{idx:02d}", test_id=test.test_id, sequence_number=idx, tool_name=call.tool,
-            sanitized_arguments=_sanitize(a), policy_decision=decision, decision_reason=reason,
+            event_id=event_id, test_id=test.test_id, sequence_number=idx, tool_name=call.tool,
+            sanitized_arguments=_sanitize(a, observer), policy_decision=decision, decision_reason=reason,
             mock_result_summary=result,
         ))
 
@@ -89,8 +102,18 @@ def run_test(test: TestCase, files: dict[str, str], findings: list[Finding]) -> 
             status, summary = "needs_review", "The skill induces actions the policy gate flagged for review."
         if not matches_expected:
             summary += f" Observed decisions {[d.value for d in decisions]} differ from expected {[d.value for d in test.expected_policy_decisions]}."
-    return TestResult(test_id=test.test_id, status=status, triggered=True, summary=summary, events=events)
+
+    canary_evt = observer.build_event(test.test_id, force=test.canary_requested)
+    return TestResult(
+        test_id=test.test_id,
+        status=status,
+        triggered=True,
+        summary=summary,
+        events=events,
+        canary_event=canary_evt,
+    )
 
 
 def run_suite(tests: list[TestCase], files: dict[str, str], findings: list[Finding]) -> list[TestResult]:
     return [run_test(t, files, findings) for t in tests]
+

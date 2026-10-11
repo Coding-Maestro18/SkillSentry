@@ -200,6 +200,32 @@ class TestCase(BaseModel):
     expected_outcome: str
     validation_status: Literal["valid", "rejected"] = "valid"
     validation_notes: list[str] = Field(default_factory=list)
+    canary_requested: bool = False
+
+
+CanaryResultState = Literal[
+    "not_attempted",
+    "not_observed",
+    "matched",
+    "not_evaluable",
+    "blocked_before_send",
+]
+
+
+class CanaryEvent(BaseModel):
+    canary_event_id: str
+    test_id: str
+    canary_id: str
+    status: CanaryResultState
+    source_tool: Optional[str] = None
+    sink_tool: Optional[str] = None
+    source_trace_event_id: Optional[str] = None
+    sink_trace_event_id: Optional[str] = None
+    exact_match: bool = False
+    value_logged: bool = False
+    token_digest: Optional[str] = None
+    detector_version: str = "1.0"
+    notes: str = ""
 
 
 class TraceEvent(BaseModel):
@@ -220,7 +246,9 @@ class TestResult(BaseModel):
     triggered: bool
     summary: str
     events: list[TraceEvent] = Field(default_factory=list)
+    canary_event: Optional[CanaryEvent] = None
     ran_at: str = Field(default_factory=utcnow)
+
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +323,7 @@ class ScanReport(BaseModel):
     suite_version: str = ""
     timings_ms: dict[str, int] = Field(default_factory=dict)
     limitations: list[str] = Field(default_factory=list)
+    extensions: dict[str, Any] = Field(default_factory=dict)
 
 
 class ScanStatus(BaseModel):

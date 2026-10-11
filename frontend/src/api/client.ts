@@ -60,8 +60,37 @@ export const api = {
   rerun: (id: string, files: Record<string, string>) =>
     call<ScanStatus>(`/api/scans/${encodeURIComponent(id)}/rerun`, json({ files })),
   comparison: (id: string) => call<Comparison>(`/api/scans/${encodeURIComponent(id)}/comparison`),
-  exportUrl: (id: string, format: "json" | "markdown") => `/api/scans/${encodeURIComponent(id)}/export?format=${format}`,
+  exportUrl: (id: string, format: "json" | "markdown" | "sarif") => `/api/scans/${encodeURIComponent(id)}/export?format=${format}`,
+
+  // Policy (Feature C)
+  getPolicy: (id: string) => call<any>(`/api/scans/${encodeURIComponent(id)}/policy`),
+  generatePolicy: (id: string) => call<any>(`/api/scans/${encodeURIComponent(id)}/policy/generate`, { method: "POST" }),
+  validatePolicy: (id: string, data: { yaml?: string; policy?: any }) =>
+    call<any>(`/api/scans/${encodeURIComponent(id)}/policy/validate`, json(data)),
+  testPolicy: (id: string, data: { yaml?: string; policy?: any; test_ids?: string[] }) =>
+    call<any>(`/api/scans/${encodeURIComponent(id)}/policy/test`, json(data)),
+  policyExportUrl: (id: string) => `/api/scans/${encodeURIComponent(id)}/policy/export`,
+
+  // Adaptive Red-Team (Feature E)
+  startRedTeam: (id: string, advanceFirstRound = true) =>
+    call<any>(`/api/scans/${encodeURIComponent(id)}/red-team-runs`, json({ advance_first_round: advanceFirstRound })),
+  getRedTeamRun: (runId: string) => call<any>(`/api/red-team-runs/${encodeURIComponent(runId)}`),
+  advanceRedTeamRound: (runId: string) =>
+    call<any>(`/api/red-team-runs/${encodeURIComponent(runId)}/advance`, { method: "POST" }),
+  stopRedTeamRun: (runId: string) =>
+    call<any>(`/api/red-team-runs/${encodeURIComponent(runId)}/stop`, { method: "POST" }),
+
+  // Multi-Skill Campaigns (Feature A)
+  listCampaigns: () => call<any[]>("/api/campaigns"),
+  createCampaign: (data: { scan_ids: string[]; handoff_fixture_id?: string; handoff_content?: string; campaign_name?: string }) =>
+    call<any>("/api/campaigns", json(data)),
+  getCampaign: (campaignId: string) => call<any>(`/api/campaigns/${encodeURIComponent(campaignId)}`),
+  simulateCampaign: (campaignId: string) =>
+    call<any>(`/api/campaigns/${encodeURIComponent(campaignId)}/simulate`, { method: "POST" }),
+  getCampaignReport: (campaignId: string) =>
+    call<any>(`/api/campaigns/${encodeURIComponent(campaignId)}/report`),
 };
+
 
 export async function waitForScan(id: string, onStatus: (s: ScanStatus) => void): Promise<ScanStatus> {
   for (;;) {

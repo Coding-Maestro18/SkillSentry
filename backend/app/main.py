@@ -11,7 +11,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api import routes_health, routes_reports, routes_scans
+from .api import (
+    routes_campaigns,
+    routes_health,
+    routes_policy,
+    routes_red_team,
+    routes_reports,
+    routes_scans,
+)
 from .api.deps import request_id
 from .config import ANALYZER_VERSION
 
@@ -71,6 +78,12 @@ async def unhandled(request: Request, exc: Exception):
 app.include_router(routes_health.router)
 app.include_router(routes_scans.router)
 app.include_router(routes_reports.router)
+app.include_router(routes_policy.router)
+app.include_router(routes_red_team.router)
+app.include_router(routes_campaigns.router)
+
+
+
 
 # Serve the built frontend (frontend/dist) when present, so one process runs the whole app.
 _DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"

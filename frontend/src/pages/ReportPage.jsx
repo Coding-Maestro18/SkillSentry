@@ -1,21 +1,24 @@
 import React, { useState } from "react";
-import { FileJson, FileText, Shield, AlertTriangle, Eye, Terminal, Wrench } from "lucide-react";
+import { FileJson, FileText, Shield, AlertTriangle, Eye, Terminal, Wrench, ShieldCheck, Network } from "lucide-react";
 import { api } from "../api/client";
 import { CapabilityPassport } from "../components/CapabilityPassport";
 import { FindingList } from "../components/FindingList";
 import { ForensicViewer } from "../components/ForensicViewer";
 import { AttackLab } from "../components/AttackLab";
 import { FixCompare } from "../components/FixCompare";
+import { PolicyReview } from "../components/PolicyReview";
 
 const TABS = [
   { id: "overview", label: "Overview & Passport", icon: Shield },
   { id: "findings", label: "Findings", icon: AlertTriangle },
   { id: "forensic", label: "Forensic Deception Viewer", icon: Eye },
   { id: "lab", label: "Attack Lab", icon: Terminal },
+  { id: "policy", label: "Least-Privilege Policy", icon: ShieldCheck },
   { id: "fix", label: "Fix & Verify", icon: Wrench },
 ];
 
-export function ReportPage({ report, onUpdate, onOpenScan }) {
+export function ReportPage({ report, onUpdate, onOpenScan, onOpenCampaigns }) {
+
   const [activeTab, setActiveTab] = useState("overview");
   const [sourceTarget, setSourceTarget] = useState(null);
   const [focusTestId, setFocusTestId] = useState(null);
@@ -71,8 +74,28 @@ export function ReportPage({ report, onUpdate, onOpenScan }) {
           </div>
         </div>
 
-        {/* Export Actions */}
-        <div className="flex items-center gap-2">
+        {/* Export Actions & Campaign Launcher */}
+        <div className="flex flex-wrap items-center gap-2">
+          {onOpenCampaigns && (
+            <button
+              type="button"
+              onClick={onOpenCampaigns}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 rounded-md text-xs font-medium transition-colors cursor-pointer"
+              title="Create or view cross-skill attack chain campaigns"
+            >
+              <Network size={13} />
+              <span>Attack Campaigns</span>
+            </button>
+          )}
+          <a
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-md text-xs font-medium transition-colors"
+            href={api.exportUrl(report.scan_id, "sarif")}
+            download
+            title="Download OASIS SARIF 2.1.0 code scanning report"
+          >
+            <FileJson size={13} className="text-emerald-400" />
+            <span>Export SARIF (2.1.0)</span>
+          </a>
           <a
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-md text-xs font-medium transition-colors"
             href={api.exportUrl(report.scan_id, "json")}
@@ -150,6 +173,10 @@ export function ReportPage({ report, onUpdate, onOpenScan }) {
             focusTest={focusTestId}
             onResult={handleTestResultUpdate}
           />
+        )}
+
+        {activeTab === "policy" && (
+          <PolicyReview scanId={report.scan_id} />
         )}
 
         {activeTab === "fix" && (
