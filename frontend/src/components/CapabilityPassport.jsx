@@ -215,12 +215,6 @@ export function CapabilityPassport({ report }) {
             </dd>
           </dl>
 
-          <div className="p-3 bg-blue-500/10 border border-blue-500/25 rounded-lg text-blue-300 text-xs flex items-center gap-2 mt-4">
-            <Info size={15} className="shrink-0" />
-            <span>
-              Simulated observations originate strictly from mock tool harness evaluation. The skill never received actual host or network execution authority.
-            </span>
-          </div>
         </Card>
 
         {/* Right Stack: Unresolved Concerns & Deception Telemetry */}

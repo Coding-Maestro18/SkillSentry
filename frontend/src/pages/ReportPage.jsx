@@ -94,7 +94,7 @@ export function ReportPage({ report, onUpdate, onOpenScan, onOpenCampaigns }) {
             title="Download OASIS SARIF 2.1.0 code scanning report"
           >
             <FileJson size={13} className="text-emerald-400" />
-            <span>Export SARIF (2.1.0)</span>
+            <span>Export SARIF</span>
           </a>
           <a
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-md text-xs font-medium transition-colors"

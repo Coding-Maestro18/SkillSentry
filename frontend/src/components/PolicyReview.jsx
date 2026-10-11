@@ -85,15 +85,6 @@ export function PolicyReview({ scanId }) {
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Policy Disclaimer Banner */}
-      <div className="p-3.5 bg-amber-500/10 border border-amber-500/25 rounded-xl text-amber-200 text-xs flex items-center gap-3">
-        <AlertCircle size={18} className="shrink-0 text-amber-400" />
-        <div>
-          <strong>Least-Privilege Policy Proposal:</strong> This policy is derived from static scan findings and Capability Passport boundaries.
-          It enforces a strict <strong>default-deny (BLOCK)</strong> stance. It is enforceable in the SkillSentry mock harness and compatible runtime policy gates.
-        </div>
-      </div>
-
       {error && (
         <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-300 text-xs flex items-center gap-2">
           <AlertTriangle size={15} />

@@ -89,15 +89,6 @@ export function AttackLab({ report, focusTest, onResult }) {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Sandbox Notice Banner */}
-      <div className="p-3.5 bg-blue-500/10 border border-blue-500/25 rounded-xl text-blue-200 text-xs flex items-center gap-3">
-        <Shield size={18} className="shrink-0 text-blue-400" />
-        <div>
-          <strong>Deterministic Mock Tool Sandbox:</strong> The harness intercepts and records all tool calls in memory.
-          No real shell processes, sockets, or host credentials are touched. Tests <strong>fail</strong> when a skill induces an action blocked or flagged by the policy gate. Suite v{report.suite_version}.
-        </div>
-      </div>
-
       {error && (
         <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-300 text-xs flex items-center gap-2">
           <AlertTriangle size={15} />
