@@ -13,13 +13,13 @@ See [`docs/prd.md`](docs/prd.md), [`docs/architecture.md`](docs/architecture.md)
 
 ## Quick start
 
-Requirements: Python 3.11+, Node 18+ (only to build the UI). Ollama is optional.
+Requirements: Python 3.11+. Node 18+ is only needed to (re)build the UI. Ollama is optional.
 
 ```bash
 pip install -r requirements-dev.txt
-cd frontend && npm install && npm run build && cd ..
-cp .env.example .env                     # optional
-uvicorn app.main:app --app-dir backend --port 8000
+cd frontend && npm install && npm run build && cd ..   # skip if frontend/dist/ already exists (e.g. the release zip)
+cp .env.example .env                                   # optional
+python -m uvicorn app.main:app --app-dir backend --port 8000
 ```
 
 Open http://localhost:8000. Upload `examples/research-assistant.zip` (or click **Load demo skill**).
